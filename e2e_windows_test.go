@@ -99,12 +99,15 @@ func TestE2E(t *testing.T) {
 				}
 
 				// another site in the window: PageScript runs, no bridge, and a call past the bridge is dropped
+				results["permissions"] = eval(`Promise.all(["notifications", "clipboard-read", "clipboard-write"].map((n) => navigator.permissions.query({ name: n }).then((p) => p.state))).then((a) => a.join(","))`)
+				results["notification permission"] = eval(`Notification.permission`)
 				_, _ = w.Call("Page.navigate", map[string]any{"url": otherURL})
 				for i := 0; i < 150 && eval(`document.title`) != `"other"`; i++ {
 					time.Sleep(100 * time.Millisecond)
 				}
 				results["other: page script"] = eval(`window.fromPageScript`)
 				results["other: bridge"] = eval(`typeof window.lightron`)
+				results["other: notification permission"] = eval(`Notification.permission`)
 				eval(`(window.__lightronPost && window.__lightronPost(JSON.stringify({t: "invoke", id: 1, name: "mark", args: []})), 1)`)
 				time.Sleep(500 * time.Millisecond)
 				results["other: marked"] = fmt.Sprint(marked)
@@ -128,17 +131,20 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("Run: %v", runErr)
 	}
 	want := map[string]string{
-		"bridge at load":     "true",
-		"script at load":     "true",
-		"page script":        "true",
-		"add":                "5",
-		"user agent":         "true",
-		"cookies":            "ok",
-		"other: page script": fmt.Sprintf("%q", strings.TrimSuffix(otherURL, "/")),
-		"other: bridge":      `"undefined"`,
-		"other: marked":      "false",
-		"closed: visible":    "false",
-		"reopened: visible":  "true",
+		"bridge at load":                 "true",
+		"script at load":                 "true",
+		"page script":                    "true",
+		"add":                            "5",
+		"user agent":                     "true",
+		"cookies":                        "ok",
+		"permissions":                    `"granted,granted,granted"`,
+		"notification permission":        `"granted"`,
+		"other: notification permission": `"default"`,
+		"other: page script":             fmt.Sprintf("%q", strings.TrimSuffix(otherURL, "/")),
+		"other: bridge":                  `"undefined"`,
+		"other: marked":                  "false",
+		"closed: visible":                "false",
+		"reopened: visible":              "true",
 	}
 	for k, v := range want {
 		if results[k] != v {

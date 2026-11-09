@@ -126,11 +126,11 @@ func (a *App) run() error {
 	}
 	w.Init(pageScripts(originOf(entry), a.opts))
 	first := pageURL(entry, a.opts.Window.Path)
-	if a.opts.UserAgentSuffix == "" {
-		w.Navigate(first)
-	} else {
-		// The User-Agent over the DevTools protocol (it needs the message loop: after Run starts), then the first page
-		go func() {
+	// Before the first page, over the DevTools protocol (it needs the message loop: after Run starts): the
+	// permissions, the User-Agent.
+	go func() {
+		e.grantPermissions()
+		if a.opts.UserAgentSuffix != "" {
 			if r, err := e.cdpCall("Browser.getVersion", nil); err != nil {
 				a.logf("user agent: %v", err)
 			} else {
@@ -142,9 +142,9 @@ func (a *App) run() error {
 					a.logf("user agent: %v", err)
 				}
 			}
-			w.Dispatch(func() { w.Navigate(first) })
-		}()
-	}
+		}
+		w.Dispatch(func() { w.Navigate(first) })
+	}()
 	go func() {
 		<-a.quit
 		w.Dispatch(func() {
@@ -164,6 +164,20 @@ func (a *App) run() error {
 	}
 	a.Quit()
 	return nil
+}
+
+// grantPermissions: notifications and the clipboard without asking, for the app's own pages, as on macOS: WebView2
+// would otherwise ask on the first notification and on reading the clipboard (paste buttons). One by one, as on macOS
+// (Browser.grantPermissions denies every permission it doesn't list). Other sites a window shows keep WebView2's
+// default (it asks).
+func (e *win) grantPermissions() {
+	for _, p := range []string{"notifications", "clipboard-read", "clipboard-write"} {
+		if _, err := e.cdpCall("Browser.setPermission", map[string]any{
+			"origin": e.origin, "permission": map[string]any{"name": p, "allowWithoutSanitization": p == "clipboard-write"}, "setting": "granted",
+		}); err != nil {
+			e.app.logf("permission %s: %v", p, err)
+		}
+	}
 }
 
 // message: the binding runs on the UI thread; nothing slow here. Only the app's own pages may use it
