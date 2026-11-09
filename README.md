@@ -108,7 +108,7 @@ lightron.Run(lightron.Options{
 	PageScript string               // JS for every page of any site a window shows (no bridge there)
 	Origins  []string               // more origins that are the app's ("http://*.localhost:7000")
 	BrowserArgs []string            // extra engine switches
-	UserAgentSuffix string          // " MyApp/1.2" after the browser's User-Agent (macOS)
+	UserAgentSuffix string          // " MyApp/1.2" after the browser's User-Agent
 	OnMessage, OnReady, OnSecondInstance …
 	KeepRunning bool                // stay in the Dock with no window
 })
@@ -116,7 +116,7 @@ lightron.Run(lightron.Options{
 
 `OnReady` hands you the `*App`: `NewWindow(path)`, `Emit(event, data)`, `SetBadge("3")`, `SetMenu(menu)`, `Quit()`,
 and per window `Eval`, `Emit`, `Focus`, `Close`. For what Lightron has no API for, `App.Call` and `Window.Call` send
-DevTools protocol commands (macOS). Only one instance runs; opening it again brings a window up.
+DevTools protocol commands. Only one instance runs; opening it again brings a window up.
 See [pkg.go.dev](https://pkg.go.dev/github.com/zbysir/lightron) and [examples/](examples).
 
 **Updates**: the [`update`](update) package checks a feed (`lightron feed` writes it; a GitHub release works as the
@@ -148,7 +148,8 @@ Know these before you choose it:
   dialog. It happens once per browser version.
 - **macOS 11+, Windows 10/11** (WebView2 comes with Windows 11 and current Windows 10; otherwise the app opens its
   download page). **Linux isn't supported yet.**
-- **Windows**: one window per app for now; `getPathForFile` returns `""`; the menu bar options are macOS's.
+- **Windows**: one window per app for now; `getPathForFile` returns `""`; the menu bar options are macOS's
+  (`KeepRunning` puts an icon in the notification area instead).
 - **Signing**: `lightron build` signs ad hoc. For distribution outside your own machines, sign with your Developer ID
   and notarize the `.app` (macOS), sign the installer (Windows). The browser copy is made and signed on the user's
   Mac, so it never needs your signature.

@@ -3,6 +3,37 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.0] - 2026-11-09
+
+Windows catches up: what an app showing other sites in its window needs there too.
+
+### Added
+
+- Windows: `Window.Call` / `App.Call` over WebView2's DevTools protocol (`CallDevToolsProtocolMethod`; one window, so
+  `App.Call` goes to its page).
+- Windows: `UserAgentSuffix`.
+- Windows: `KeepRunning`: closing the window hides it; an icon in the notification area brings it back or quits (its
+  menu: Open, the `DockMenu`'s items, Quit). Opening the app again also brings it back.
+- `lightron build`: `exe` (the executable's name), `files` (more files and directories in the package: the .app's
+  Resources, next to the .exe; `{os}` / `{arch}` in sources), `nsis_include` (an NSIS script; its `preInstall` macro
+  runs before the files are copied). `main` may be in another module than lightron.json.
+- A Windows end-to-end test in CI (e2e_windows_test.go).
+
+### Changed
+
+- Windows: bridge calls are checked against the origin of the page the window shows, as on macOS.
+- The Windows installer ends the running app before copying (its files are in use).
+
+### Fixed
+
+- Windows: `update`'s `Install` never ran the installer: PowerShell started with `DETACHED_PROCESS` exits without
+  running its script.
+
+### Notes
+
+- WebView2 runs `Script` / `PageScript` in every frame, iframes included (macOS: the page's frames, not cross-origin
+  iframes, which are separate targets). A script meant for the window's page should check `window.top === window`.
+
 ## [0.3.1] - 2026-11-09
 
 ### Fixed
@@ -62,6 +93,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.0]: https://github.com/zbysir/lightron/releases/tag/v0.4.0
 [0.3.1]: https://github.com/zbysir/lightron/releases/tag/v0.3.1
 [0.3.0]: https://github.com/zbysir/lightron/releases/tag/v0.3.0
 [0.2.0]: https://github.com/zbysir/lightron/releases/tag/v0.2.0

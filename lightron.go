@@ -61,7 +61,8 @@ type Options struct {
 	// Script is JavaScript run in every page of the app before the page's own scripts, after window.lightron is set
 	// up: a compatibility layer for an existing web app (window.yourNative = …), settings to seed.
 	Script string
-	// PageScript is JavaScript run in every page a window shows, of any site, before the page's own scripts: for an
+	// PageScript is JavaScript run in every page a window shows, of any site, before the page's own scripts (on
+	// Windows also in every iframe: check window.top === window for the page itself): for an
 	// app whose windows also show other sites (it can add to them, e.g. a panel of the app's own in an iframe).
 	// window.lightron is there only on the app's own pages (the origin of URL / URLFunc / Handler, and Origins):
 	// other sites never get the bridge, nor do Script or Bind reach them.
@@ -73,7 +74,7 @@ type Options struct {
 	// "--disable-features=…". They apply to the app's own profile only.
 	BrowserArgs []string
 	// UserAgentSuffix is appended to the browser's User-Agent, in every window (" MyApp/1.2"), so sites can tell
-	// they are inside the app. macOS only for now.
+	// they are inside the app.
 	UserAgentSuffix string
 	// OnMessage receives what the page sends with lightron.send(value).
 	OnMessage func(w *Window, msg json.RawMessage)
