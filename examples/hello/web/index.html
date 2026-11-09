@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Hello</title>
+    <style>
+      :root { color-scheme: light dark; font: 15px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; }
+      body { max-width: 640px; margin: 40px auto; padding: 0 20px; }
+      button { font: inherit; padding: 6px 12px; margin: 4px 4px 4px 0; border-radius: 6px; }
+      #drop { border: 2px dashed #8884; border-radius: 10px; padding: 28px; text-align: center; margin: 16px 0; }
+      pre { background: #8881; padding: 10px; border-radius: 8px; min-height: 6em; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Hello from Lightron</h1>
+    <p>This page is served by a Go <code>http.Handler</code> and talks to Go through <code>window.lightron</code>.</p>
+    <p>
+      <button id="add">invoke("add", 2, 3)</button>
+      <button id="host">invoke("hostname")</button>
+      <button id="notify">Notification</button>
+      <button id="link">Open lightron on GitHub</button>
+    </p>
+    <div id="drop">Drop a file here (macOS: its path on disk)</div>
+    <p>Clock from Go: <b id="tick">…</b></p>
+    <pre id="log"></pre>
+    <script>
+      const out = (...a) => (document.getElementById("log").textContent += a.join(" ") + "\n");
+      document.getElementById("add").onclick = async () => out("2 + 3 =", await lightron.invoke("add", 2, 3));
+      document.getElementById("host").onclick = async () => out("hostname:", await lightron.invoke("hostname"));
+      document.getElementById("notify").onclick = async () => {
+        if ((await Notification.requestPermission()) !== "granted") return out("notifications: not allowed");
+        const n = new Notification("Hello", { body: "Click to bring the window up." });
+        n.onclick = () => lightron.focus();
+      };
+      document.getElementById("link").onclick = () => window.open("https://github.com/zbysir/lightron");
+      lightron.on("tick", (t) => (document.getElementById("tick").textContent = t));
+      lightron.on("hi", (t) => out("menu says hi:", t));
+      const drop = document.getElementById("drop");
+      drop.ondragover = (e) => e.preventDefault();
+      drop.ondrop = async (e) => {
+        e.preventDefault();
+        for (const f of e.dataTransfer.files) {
+          const p = lightron.getPathForFile(f);
+          out("dropped", f.name, "→", p || "(no path)", p ? "· " + (await lightron.invoke("stat", p)) : "");
+        }
+      };
+      out("platform:", lightron.platform, "· origin:", location.origin);
+    </script>
+  </body>
+</html>

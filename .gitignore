@@ -1,0 +1,4 @@
+dist/
+*.syso
+!internal/**/*.syso
+.DS_Store

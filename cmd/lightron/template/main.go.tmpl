@@ -1,0 +1,40 @@
+// {{.Name}}: a Lightron app (https://github.com/zbysir/lightron).
+//
+//	go run .            run it
+//	lightron build      package it into dist/
+package main
+
+import (
+	"embed"
+	"io/fs"
+	"log"
+	"net/http"
+
+	"github.com/zbysir/lightron"
+)
+
+//go:embed web
+var web embed.FS
+
+//go:embed icon.png
+var icon []byte
+
+// version is set by lightron build (-X main.version).
+var version = "0.0.0-dev"
+
+func main() {
+	pages, _ := fs.Sub(web, "web")
+	err := lightron.Run(lightron.Options{
+		Name:    "{{.Name}}",
+		ID:      "{{.ID}}",
+		Version: version,
+		Icon:    icon,
+		Handler: http.FileServer(http.FS(pages)),
+		Bind: map[string]any{
+			"greet": func(name string) string { return "Hello, " + name + "!" },
+		},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+}

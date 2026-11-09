@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        if: runner.os != 'Windows'
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet
+        shell: bash
+        run: |
+          go vet ./...
+          GOOS=darwin go vet ./...
+          GOOS=windows go vet ./...
+          GOOS=linux go vet ./...
+      - run: go test ./...
+      - name: build the examples
+        run: go build ./examples/...
+
+  # The CLI end to end: an app from `lightron init`, built for every target.
+  package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: brew install makensis
+      - name: lightron build (examples/hello)
+        working-directory: examples/hello
+        run: |
+          go run ../../cmd/lightron build --version 1.0.0
+          go run ../../cmd/lightron feed --version 1.0.0
+          ls -l dist
+          test -f dist/Hello-1.0.0-darwin-arm64.dmg
+          test -f dist/Hello-1.0.0-windows-amd64-setup.exe
+          test -f dist/update.json
+
+  menulib:
+    # The menu library is checked in built; this only checks its source still compiles (clang versions differ, so
+    # the output isn't compared).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make menulib

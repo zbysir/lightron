@@ -1,0 +1,15 @@
+name: Feature request
+description: Something Lightron should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you're trying to do
+      description: The app and the problem, not only the API you'd like. It helps decide whether it belongs in Lightron or on top of it.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work

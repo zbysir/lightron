@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: build the CLI
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          for t in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            os="${t%/*}" arch="${t#*/}" ext=""
+            [ "$os" = windows ] && ext=.exe
+            dir="lightron_${v}_${os}_${arch}"
+            mkdir -p "$dir"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o "$dir/lightron$ext" ./cmd/lightron
+            cp LICENSE README.md "$dir/"
+            if [ "$os" = windows ]; then zip -qr "out/$dir.zip" "$dir"; else tar czf "out/$dir.tar.gz" "$dir"; fi
+          done
+          (cd out && sha256sum * > checksums.txt)
+      - name: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The notes: this version's section of CHANGELOG.md.
+          awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[?"v"\\]?" {p=1; next} /^## / {p=0} p' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" out/* --title "$GITHUB_REF_NAME" --notes-file notes.md

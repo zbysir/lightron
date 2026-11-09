@@ -1,0 +1,7 @@
+{
+  "name": "Hello",
+  "id": "dev.lightron.hello",
+  "version": "0.1.0",
+  "icon": "icon.png",
+  "publisher": "Lightron"
+}
