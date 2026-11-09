@@ -51,6 +51,10 @@ AutoCloseWindow true
 Page instfiles
 
 Section
+  ; the app may be running (a manual reinstall; an update quits it first): its files can't be replaced while in use.
+  ; What it started (a backend on a pipe) goes with it.
+  nsExec::Exec 'taskkill /F /T /IM "{{.Exe}}"'
+  Sleep 1000
 !ifmacrodef preInstall
   !insertmacro preInstall
 !endif
