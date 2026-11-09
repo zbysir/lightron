@@ -75,7 +75,9 @@
   );
 
   // ---- links leaving the app go to the default browser ----
-  // Without this they'd open in the app's browser, in a window the app doesn't own.
+  // Without this they'd open in the app's browser, in a window the app doesn't own. Not in iframes on Windows: WebView2
+  // delivers messages from the top page only, so the link would be swallowed (the page's own handling, if any, runs).
+  const ownLinks = window.top === window || platform !== "windows";
   const external = (href) => {
     try {
       const u = new URL(href, location.href);
@@ -86,7 +88,7 @@
   };
   const open = window.open;
   window.open = function (u, ...rest) {
-    const x = u && external(String(u));
+    const x = ownLinks && u && external(String(u));
     if (x) {
       post({ t: "open", url: x });
       return null;
@@ -95,7 +97,7 @@
   };
   // Bubble phase, on window: after the page's own handlers (one that opened the link itself has called preventDefault).
   addEventListener("click", (e) => {
-    if (e.defaultPrevented || e.button > 1) return;
+    if (!ownLinks || e.defaultPrevented || e.button > 1) return;
     const a = e.composedPath().find((n) => n instanceof HTMLAnchorElement && n.href);
     const x = a && external(a.href);
     if (!x) return;

@@ -10,6 +10,13 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
 - Windows: notifications and the clipboard are allowed without asking for the app's own pages, as on macOS (WebView2
   asked on the first notification and on reading the clipboard). Other sites a window shows still ask.
 
+## [0.4.2] - 2026-11-09
+
+### Fixed
+
+- Windows: the bridge no longer takes over links in iframes (WebView2 delivers messages from the top page only, so
+  0.4.1's fix couldn't reach them): the page's own handling of its links runs there.
+
 ## [0.4.1] - 2026-11-09
 
 ### Fixed
@@ -108,6 +115,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.2]: https://github.com/zbysir/lightron/releases/tag/v0.4.2
 [0.4.2]: https://github.com/zbysir/lightron/releases/tag/v0.4.2
 [0.4.1]: https://github.com/zbysir/lightron/releases/tag/v0.4.1
 [0.4.0]: https://github.com/zbysir/lightron/releases/tag/v0.4.0
