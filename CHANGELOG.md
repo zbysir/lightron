@@ -3,6 +3,13 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.3.1] - 2026-11-09
+
+### Fixed
+
+- 0.3.0 didn't build on Linux (where `Run` returns `ErrUnsupported`): the page scripts used the bridge, which is only
+  in the macOS and Windows builds.
+
 ## [0.3.0] - 2026-11-09
 
 For apps whose windows also show other sites (Creght's desktop app: a web app on the left, the app's own panel on the
@@ -55,6 +62,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.3.1]: https://github.com/zbysir/lightron/releases/tag/v0.3.1
 [0.3.0]: https://github.com/zbysir/lightron/releases/tag/v0.3.0
 [0.2.0]: https://github.com/zbysir/lightron/releases/tag/v0.2.0
 [0.1.0]: https://github.com/zbysir/lightron/releases/tag/v0.1.0
