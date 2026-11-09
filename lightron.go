@@ -18,7 +18,7 @@ import (
 	"net/http"
 )
 
-// Options describe the app. Name, ID, and one of URL or Handler are required.
+// Options describe the app. Name, ID, and one of URL, URLFunc or Handler are required.
 type Options struct {
 	// Name is the app's name in the Dock / taskbar, ⌘Tab, the menu bar and notifications.
 	Name string
@@ -32,6 +32,10 @@ type Options struct {
 	// URL is a page served by something else, e.g. a backend your app starts. An http URL on this machine is shown
 	// at http://<Host>/ (see Host); https and remote URLs are shown as they are.
 	URL string
+	// URLFunc returns URL instead, once Lightron knows this is the only instance running (a second one only hands
+	// over to the first and returns): for an app that starts its backend first and shows what that serves. An error
+	// ends Run.
+	URLFunc func() (string, error)
 	// Handler serves the pages instead: Lightron runs it on a private loopback port that only the app's windows can
 	// use (a secret cookie, set on the first load).
 	Handler http.Handler
@@ -53,6 +57,9 @@ type Options struct {
 	// decoded into the parameters' types; return a value, an error, or (value, error). A first parameter of type
 	// *Window receives the window that called.
 	Bind map[string]any
+	// Script is JavaScript run in every page of the app before the page's own scripts, after window.lightron is set
+	// up: a compatibility layer for an existing web app (window.yourNative = …), settings to seed.
+	Script string
 	// OnMessage receives what the page sends with lightron.send(value).
 	OnMessage func(w *Window, msg json.RawMessage)
 	// OnReady runs once the first window has been asked for.
@@ -98,7 +105,8 @@ type MenuItem struct {
 // Separator is a menu separator line.
 var Separator = MenuItem{Separator: true}
 
-// ErrUnsupported is returned by Run on a platform Lightron doesn't run on yet (Linux).
+// ErrUnsupported is returned by Run on a platform Lightron doesn't run on yet (Linux), and by what a platform
+// doesn't have (Window.Call on Windows).
 var ErrUnsupported = errors.New("lightron: this platform isn't supported yet")
 
 // Run shows the app and blocks until it quits. Call it from main.
@@ -106,8 +114,14 @@ func Run(opts Options) error {
 	if opts.Name == "" || opts.ID == "" {
 		return errors.New("lightron: Options.Name and Options.ID are required")
 	}
-	if (opts.URL == "") == (opts.Handler == nil) {
-		return errors.New("lightron: set one of Options.URL and Options.Handler")
+	set := 0
+	for _, ok := range []bool{opts.URL != "", opts.URLFunc != nil, opts.Handler != nil} {
+		if ok {
+			set++
+		}
+	}
+	if set != 1 {
+		return errors.New("lightron: set one of Options.URL, Options.URLFunc and Options.Handler")
 	}
 	if opts.Logf == nil {
 		opts.Logf = log.Printf

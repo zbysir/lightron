@@ -97,18 +97,21 @@ lightron.Run(lightron.Options{
 	Name, ID, Version string
 	Icon     []byte                 // square PNG, 512px+
 	URL      string                 // a page served by something else…
-	Handler  http.Handler           // …or by Lightron, on a private loopback port
+	URLFunc  func() (string, error) // …or one known only once it's started (your backend)…
+	Handler  http.Handler           // …or pages served by Lightron, on a private loopback port
 	Window   lightron.WindowOptions // Path, Width, Height
 	Menu     []lightron.MenuItem    // macOS menu bar (nil: a standard one)
 	DockMenu []lightron.MenuItem
 	Bind     map[string]any         // functions for lightron.invoke
+	Script   string                 // JS for every page, after window.lightron (a compatibility layer)
 	OnMessage, OnReady, OnSecondInstance …
 	KeepRunning bool                // stay in the Dock with no window
 })
 ```
 
-`OnReady` hands you the `*App`: `NewWindow(path)`, `Emit(event, data)`, `SetBadge("3")`, `Quit()`, and per window
-`Eval`, `Emit`, `Focus`, `Close`. Only one instance runs; opening it again brings a window up.
+`OnReady` hands you the `*App`: `NewWindow(path)`, `Emit(event, data)`, `SetBadge("3")`, `SetMenu(menu)`, `Quit()`,
+and per window `Eval`, `Emit`, `Focus`, `Close`. For what Lightron has no API for, `App.Call` and `Window.Call` send
+DevTools protocol commands (macOS). Only one instance runs; opening it again brings a window up.
 See [pkg.go.dev](https://pkg.go.dev/github.com/zbysir/lightron) and [examples/](examples).
 
 **Updates**: the [`update`](update) package checks a feed (`lightron feed` writes it; a GitHub release works as the

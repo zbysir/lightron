@@ -26,7 +26,7 @@ type macMenu struct {
 
 func newMacMenu(m *mac, sock string) (*macMenu, error) {
 	mm := &macMenu{m: m, sock: sock, click: map[int]func(*Window){}}
-	mm.spec = mm.build(m.app.opts)
+	mm.spec = mm.build()
 	_ = os.Remove(sock)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -56,7 +56,10 @@ func (mm *macMenu) read(c net.Conn) {
 		switch kind {
 		case "click":
 			n, _ := strconv.Atoi(arg)
-			if f := mm.click[n]; f != nil {
+			mm.mu.Lock()
+			f := mm.click[n]
+			mm.mu.Unlock()
+			if f != nil {
 				go f(mm.m.focusedWindow())
 			}
 		case "action":
@@ -90,18 +93,37 @@ func (mm *macMenu) activate() {
 	}
 }
 
+// rebuild sends the menus again (App.SetMenu / SetDockMenu).
+func (mm *macMenu) rebuild() {
+	spec := mm.build()
+	mm.mu.Lock()
+	mm.spec = spec
+	conns := append([]net.Conn(nil), mm.conns...)
+	mm.mu.Unlock()
+	for _, c := range conns {
+		_, _ = c.Write(append(spec, '\n'))
+	}
+}
+
 type specItem map[string]any
 
 // build: the spec (internal/macmenu/objc/menu.m): "dock" is the Dock menu, "app" the app menu's items, "edit" /
 // "window" the browser's own menus in that place, the rest are menus of ours.
-func (mm *macMenu) build(o Options) []byte {
-	menu := o.Menu
+func (mm *macMenu) build() []byte {
+	menu, dock := mm.m.app.menus()
 	if menu == nil {
-		menu = DefaultMenu(o.Name)
+		menu = DefaultMenu(mm.m.app.opts.Name)
 	}
+	mm.mu.Lock()
+	mm.click = map[int]func(*Window){}
+	mm.mu.Unlock()
 	var spec []specItem
-	if len(o.DockMenu) > 0 {
-		spec = append(spec, specItem{"role": "dock", "items": mm.items(o.DockMenu)})
+	// Always a dock entry, null when there is no Dock menu (the system's items only): the library keeps the last one
+	// it was sent.
+	if len(dock) > 0 {
+		spec = append(spec, specItem{"role": "dock", "items": mm.items(dock)})
+	} else {
+		spec = append(spec, specItem{"role": "dock", "none": true})
 	}
 	for i, top := range menu {
 		switch {
@@ -134,8 +156,10 @@ func (mm *macMenu) items(in []MenuItem) []specItem {
 		case len(it.Submenu) > 0:
 			s["items"] = mm.items(it.Submenu)
 		case it.Click != nil:
+			mm.mu.Lock()
 			n := len(mm.click) + 1
 			mm.click[n] = it.Click
+			mm.mu.Unlock()
 			s["send"] = fmt.Sprintf("click %d", n)
 		case roleSelectors[it.Role] != "":
 			s["sel"] = roleSelectors[it.Role]

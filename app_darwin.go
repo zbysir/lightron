@@ -74,6 +74,12 @@ func (a *App) run() error {
 	}
 
 	entry := a.opts.URL
+	if a.opts.URLFunc != nil {
+		var err error
+		if entry, err = a.opts.URLFunc(); err != nil {
+			return err
+		}
+	}
 	var srv *server
 	if a.opts.Handler != nil {
 		var err error
@@ -333,7 +339,7 @@ func (m *mac) attach(session, target, typ, u, opener string, waiting bool) {
 		{"Runtime.addBinding", map[string]any{"name": "__lightronPost"}},
 		{"Page.enable", nil},
 		{"Inspector.enable", nil},
-		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": bridgeJS}},
+		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": bridgeJS + "\n" + m.app.opts.Script}},
 	} {
 		if _, err := m.c.Call(session, step.method, step.params); err != nil {
 			m.app.logf("attach %s: %v", step.method, err)
@@ -470,6 +476,20 @@ func (m *mac) newWindow(path string) error {
 	return nil
 }
 
+func (m *mac) call(w *Window, method string, params any) (json.RawMessage, error) {
+	session := ""
+	if w != nil {
+		session = w.session
+	}
+	return m.c.Call(session, method, params)
+}
+
+func (m *mac) setMenu() {
+	if m.menu != nil {
+		m.menu.rebuild()
+	}
+}
+
 func (m *mac) eval(w *Window, js string) error {
 	_, err := m.c.Eval(w.session, js)
 	return err
@@ -536,9 +556,18 @@ func setPrefs(profile string) {
 // acceptLang: the system's preferred languages (AppleLanguages: zh-Hans-CN, en-US…) as Accept-Language
 // (zh-CN,zh,en-US,en). A new profile would say en-US whatever the system's language.
 func acceptLang() string {
-	out, err := exec.Command("defaults", "read", "-g", "AppleLanguages").Output()
-	if err != nil {
-		return "en-US,en"
+	// The user's list may be missing (never changed it), with the language only in the machine-wide preferences (set
+	// at install) or in AppleLocale (region and language: zh-Hans_CN).
+	var out []byte
+	for _, args := range [][]string{
+		{"read", "-g", "AppleLanguages"},
+		{"read", "/Library/Preferences/.GlobalPreferences", "AppleLanguages"},
+		{"read", "-g", "AppleLocale"},
+	} {
+		if b, err := exec.Command("defaults", args...).Output(); err == nil && len(strings.TrimSpace(string(b))) > 0 {
+			out = []byte(strings.ReplaceAll(string(b), "_", "-"))
+			break
+		}
 	}
 	var langs []string
 	seen := map[string]bool{}

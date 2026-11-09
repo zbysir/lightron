@@ -119,6 +119,7 @@ static NSMenuItem *buildItem(NSDictionary *d) {
 
 static NSMenu *build(NSString *title, NSArray *items) {
   NSMenu *m = [[NSMenu alloc] initWithTitle:title];
+  if (![items isKindOfClass:[NSArray class]]) return m; // JSON null arrives as NSNull
   for (NSDictionary *d in items) {
     NSMenuItem *it = buildItem(d);
     if (it) [m addItem:it];
@@ -173,7 +174,7 @@ static void apply(void) {
   for (NSDictionary *d in spec) {
     NSString *role = d[@"role"];
     if ([role isEqualToString:@"dock"]) {
-      dockMenu = build(@"", d[@"items"] ?: @[]);
+      dockMenu = [d[@"none"] boolValue] ? nil : build(@"", d[@"items"] ?: @[]);
       continue;
     }
     if ([role isEqualToString:@"app"]) {

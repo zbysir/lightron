@@ -68,6 +68,12 @@ func (a *App) run() error {
 		defer ln.Close()
 	}
 	entry := a.opts.URL
+	if a.opts.URLFunc != nil {
+		var err error
+		if entry, err = a.opts.URLFunc(); err != nil {
+			return err
+		}
+	}
 	if a.opts.Handler != nil {
 		srv, err := serve(a.opts.Handler, a.opts.Logf)
 		if err != nil {
@@ -102,7 +108,7 @@ func (a *App) run() error {
 	if err := w.Bind("__lightronPost", func(payload string) { e.message(payload) }); err != nil {
 		return err
 	}
-	w.Init(bridgeJS)
+	w.Init(bridgeJS + "\n" + a.opts.Script)
 	w.Navigate(pageURL(entry, a.opts.Window.Path))
 	go func() {
 		<-a.quit
@@ -163,6 +169,10 @@ func (e *win) focus(*Window) {
 func (e *win) close(*Window) { e.app.Quit() }
 
 func (e *win) setBadge(string) {}
+
+func (e *win) call(*Window, string, any) (json.RawMessage, error) { return nil, ErrUnsupported }
+
+func (e *win) setMenu() {}
 
 // setIcon: the window's big (Alt+Tab, taskbar) and small (title bar) icons from the PNG, at runtime: no resource
 // compiler needed. (lightron build also puts it in the exe, for Explorer.)

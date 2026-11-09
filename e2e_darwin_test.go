@@ -24,6 +24,7 @@ func TestE2E(t *testing.T) {
 		window.events = [];
 		lightron.on("ping", (d) => window.events.push(d));
 		window.bridgeAtLoad = typeof window.lightron === "object";
+		window.scriptAtLoad = window.fromScript;
 	</script>`
 	results := map[string]string{}
 	var runErr error
@@ -32,6 +33,7 @@ func TestE2E(t *testing.T) {
 		defer close(done)
 		runErr = Run(Options{
 			Name: "Lightron E2E", ID: "dev.lightron.e2e", DataDir: dir,
+			Script:  `window.fromScript = typeof window.lightron.invoke === "function"`,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, page) }),
 			Bind: map[string]any{
 				"add":  func(a, b int) int { return a + b },
@@ -68,6 +70,17 @@ func TestE2E(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 				}
 				results["bridge at load"] = eval(`window.bridgeAtLoad`)
+				results["script at load"] = eval(`window.scriptAtLoad`)
+				if r, err := w.Call("Runtime.evaluate", map[string]any{"expression": "6 * 7", "returnByValue": true}); err == nil {
+					results["window call"] = string(r)
+				}
+				if r, err := a.Call("Browser.getVersion", nil); err == nil && strings.Contains(string(r), "product") {
+					results["app call"] = "ok"
+				}
+				a.SetMenu(append(DefaultMenu("Lightron E2E"), MenuItem{Label: "Extra", Submenu: []MenuItem{{Label: "Hi", Click: func(*Window) {}}}}))
+				time.Sleep(500 * time.Millisecond)
+				bar, _ := exec.Command("osascript", "-e", `tell application "System Events" to get name of menu bar items of menu bar 1 of (first process whose bundle identifier is "dev.lightron.e2e.engine")`).Output()
+				results["menu after SetMenu"] = fmt.Sprint(strings.Contains(string(bar), "Extra"))
 				results["origin"] = eval(`location.origin`)
 				results["secure"] = eval(`isSecureContext`)
 				results["add"] = eval(`lightron.invoke("add", 2, 3)`)
@@ -102,6 +115,10 @@ func TestE2E(t *testing.T) {
 	}
 	want := map[string]string{
 		"bridge at load":           "true",
+		"script at load":           "true",
+		"window call":              `{"result":{"type":"number","value":42,"description":"42"}}`,
+		"app call":                 "ok",
+		"menu after SetMenu":       "true",
 		"origin":                   `"http://e2e"`,
 		"secure":                   "true",
 		"add":                      "5",

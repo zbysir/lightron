@@ -26,6 +26,8 @@ type engine interface {
 	focus(w *Window)
 	close(w *Window)
 	setBadge(label string)
+	call(w *Window, method string, params any) (json.RawMessage, error)
+	setMenu()
 }
 
 // Window is one window of the app.
@@ -55,6 +57,12 @@ func (w *Window) Emit(event string, data any) error {
 // Focus brings the window and the app to the front.
 func (w *Window) Focus() { w.app.eng.focus(w) }
 
+// Call sends a DevTools protocol command to this window's page (Runtime.evaluate, Page.navigate,
+// SystemInfo-style queries…) and returns its result. macOS only (ErrUnsupported elsewhere). See App.Call.
+func (w *Window) Call(method string, params any) (json.RawMessage, error) {
+	return w.app.eng.call(w, method, params)
+}
+
 // Close closes the window.
 func (w *Window) Close() { w.app.eng.close(w) }
 
@@ -81,6 +89,37 @@ func (a *App) Emit(event string, data any) {
 
 // SetBadge shows label on the app's Dock icon ("" clears it). macOS only.
 func (a *App) SetBadge(label string) { a.eng.setBadge(label) }
+
+// SetMenu replaces the macOS menu bar (Options.Menu): another language, the label of an update that is ready, keys
+// the person changed. nil: the default menu.
+func (a *App) SetMenu(menu []MenuItem) {
+	a.mu.Lock()
+	a.opts.Menu = menu
+	a.mu.Unlock()
+	a.eng.setMenu()
+}
+
+// SetDockMenu replaces the Dock icon's menu (Options.DockMenu).
+func (a *App) SetDockMenu(menu []MenuItem) {
+	a.mu.Lock()
+	a.opts.DockMenu = menu
+	a.mu.Unlock()
+	a.eng.setMenu()
+}
+
+// menus: the current Menu and DockMenu.
+func (a *App) menus() (menu, dock []MenuItem) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.opts.Menu, a.opts.DockMenu
+}
+
+// Call sends a DevTools protocol command to the browser (not to a page; see Window.Call) and returns its result:
+// what Lightron has no API for. macOS only (ErrUnsupported elsewhere). Lightron relies on the targets it attached
+// to; don't detach from them or turn off domains it enabled (Runtime, Page, Inspector).
+func (a *App) Call(method string, params any) (json.RawMessage, error) {
+	return a.eng.call(nil, method, params)
+}
 
 // Quit closes the windows and makes Run return.
 func (a *App) Quit() { a.once.Do(func() { close(a.quit) }) }
