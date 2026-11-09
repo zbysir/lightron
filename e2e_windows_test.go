@@ -20,7 +20,16 @@ func TestE2E(t *testing.T) {
 	if os.Getenv("LIGHTRON_E2E") == "" {
 		t.Skip("set LIGHTRON_E2E=1 (opens a window)")
 	}
-	dir := t.TempDir()
+	// Not t.TempDir: WebView2's processes outlive Run by a moment and hold its lockfile, which fails the test's cleanup
+	dir, err := os.MkdirTemp("", "lightron-e2e-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for i := 0; i < 20 && os.RemoveAll(dir) != nil; i++ {
+			time.Sleep(250 * time.Millisecond)
+		}
+	})
 	page := `<!doctype html><title>e2e</title><script>
 		window.bridgeAtLoad = typeof window.lightron === "object";
 		window.scriptAtLoad = window.fromScript;
