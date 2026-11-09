@@ -3,6 +3,14 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.1] - 2026-11-09
+
+### Fixed
+
+- Windows: links (`target=_blank`, `window.open`) in an iframe of the app's own inside another site did nothing: the
+  bridge is there too (WebView2 injects into iframes), and its "open in the default browser" was dropped by the origin
+  check. Opening an http(s) address is now allowed from any page.
+
 ## [0.4.0] - 2026-11-09
 
 Windows catches up: what an app showing other sites in its window needs there too.
@@ -93,6 +101,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.1]: https://github.com/zbysir/lightron/releases/tag/v0.4.1
 [0.4.0]: https://github.com/zbysir/lightron/releases/tag/v0.4.0
 [0.3.1]: https://github.com/zbysir/lightron/releases/tag/v0.3.1
 [0.3.0]: https://github.com/zbysir/lightron/releases/tag/v0.3.0

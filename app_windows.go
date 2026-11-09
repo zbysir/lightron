@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -168,6 +169,12 @@ func (a *App) run() error {
 // message: the binding runs on the UI thread; nothing slow here. Only the app's own pages may use it
 // (Options.PageScript): the window can show other sites, and the binding is there on every page.
 func (e *win) message(payload string) {
+	// Opening an http(s) link in the default browser is fine from any page: WebView2 puts the bridge in iframes too
+	// (a page of the app's own inside another site), whose calls the origin check below can't tell from the page's
+	if u, ok := externalOpen(payload); ok {
+		go openExternal(u)
+		return
+	}
 	if e.core != nil {
 		if o := originOf(source(e.core)); !appOrigin(o, e.origin, e.app.opts.Origins) {
 			e.app.logf("bridge: a call from %q ignored (not the app's page)", o)
@@ -226,6 +233,22 @@ func (e *win) close(*Window) {
 }
 
 func (e *win) setBadge(string) {}
+
+// externalOpen: a bridge message asking to open an http(s) address in the default browser
+func externalOpen(payload string) (string, bool) {
+	var m struct {
+		T   string `json:"t"`
+		URL string `json:"url"`
+	}
+	if json.Unmarshal([]byte(payload), &m) != nil || m.T != "open" {
+		return "", false
+	}
+	u, err := url.Parse(m.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", false
+	}
+	return u.String(), true
+}
 
 // call: the DevTools protocol on the window's page (one window: App.Call goes there too).
 func (e *win) call(_ *Window, method string, params any) (json.RawMessage, error) {
