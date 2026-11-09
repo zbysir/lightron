@@ -105,8 +105,10 @@ func goBuild(c *Config, goos, arch, out, ldflags string) error {
 	if ldflags != "" {
 		flags += " " + ldflags
 	}
-	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", flags, "-o", out, c.Main)
-	cmd.Dir = c.dir
+	// From the main package's directory: it may be in another module than lightron.json (an app packaged by another
+	// repository)
+	cmd := exec.Command("go", "build", "-trimpath", "-ldflags", flags, "-o", mustAbs(out), ".")
+	cmd.Dir = filepath.Join(c.dir, c.Main)
 	cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+arch, "CGO_ENABLED=0")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
@@ -138,6 +140,11 @@ func buildMac(c *Config, arch string, icon image.Image, ldflags string) ([]strin
 	}
 	if err := os.WriteFile(filepath.Join(app, "Contents", "Resources", "icon.icns"), pack.ICNS(icon), 0o644); err != nil {
 		return nil, err
+	}
+	for dst, src := range c.files("darwin", arch) {
+		if err := copyTree(src, filepath.Join(app, "Contents", "Resources", dst)); err != nil {
+			return nil, err
+		}
 	}
 	plist := pack.Plist(map[string]any{
 		"CFBundleIdentifier": c.ID, "CFBundleName": c.Name, "CFBundleDisplayName": c.Name,
@@ -211,6 +218,20 @@ func buildWindows(c *Config, arch string, icon image.Image, ldflags string) ([]s
 	if err := os.WriteFile(filepath.Join(stage, "icon.ico"), pack.ICO(icon, []int{16, 24, 32, 48, 64, 256}, false), 0o644); err != nil {
 		return nil, err
 	}
+	var dirs []pack.NSISDir
+	files := []string{mustAbs(filepath.Join(stage, exe)), mustAbs(filepath.Join(stage, "icon.ico"))}
+	for dst, src := range c.files("windows", arch) {
+		if err := copyTree(src, filepath.Join(stage, dst)); err != nil {
+			return nil, err
+		}
+		if st, err := os.Stat(src); err == nil && st.IsDir() {
+			dirs = append(dirs, pack.NSISDir{Dest: filepath.ToSlash(dst), Src: filepath.Join(mustAbs(filepath.Join(stage, dst)), "*")})
+		} else if filepath.Dir(dst) == "." {
+			files = append(files, mustAbs(filepath.Join(stage, dst)))
+		} else {
+			return nil, fmt.Errorf("files: %q: a single file goes next to the .exe (put it in a directory)", dst)
+		}
+	}
 	name := c.pkgName("windows", arch)
 	zip := filepath.Join(c.Out, name+".zip")
 	if err := pack.Zip(zip, stage); err != nil {
@@ -225,8 +246,8 @@ func buildWindows(c *Config, arch string, icon image.Image, ldflags string) ([]s
 		}
 		script, err := pack.NSISScript(pack.NSIS{
 			Name: c.Name, Version: c.Version, Publisher: c.Publisher, Exe: exe,
-			Files: []string{mustAbs(filepath.Join(stage, exe)), mustAbs(filepath.Join(stage, "icon.ico"))},
-			Out:   setup, Icon: setupIcon, ShortcutIcon: "icon.ico", RegKey: c.slug(),
+			Files: files, Dirs: dirs, Include: c.NSISInclude,
+			Out: setup, Icon: setupIcon, ShortcutIcon: "icon.ico", RegKey: c.slug(),
 		})
 		if err != nil {
 			return nil, err
@@ -250,6 +271,38 @@ func buildWindows(c *Config, arch string, icon image.Image, ldflags string) ([]s
 		fmt.Println("  (no installer: makensis not found; brew install makensis / apt install nsis)")
 	}
 	return outs, nil
+}
+
+// copyTree copies a file or a directory (modes kept: executables stay executable).
+func copyTree(src, dst string) error {
+	st, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("files: %w", err)
+	}
+	if !st.IsDir() {
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		b, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(dst, b, st.Mode().Perm())
+	}
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		to := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(to, 0o755)
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("files: %s is a symlink (not copied into packages)", p)
+		}
+		return copyTree(p, to)
+	})
 }
 
 func have(tool string) bool {

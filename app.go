@@ -59,7 +59,7 @@ func (w *Window) Emit(event string, data any) error {
 func (w *Window) Focus() { w.app.eng.focus(w) }
 
 // Call sends a DevTools protocol command to this window's page (Runtime.evaluate, Page.navigate,
-// SystemInfo-style queries…) and returns its result. macOS only (ErrUnsupported elsewhere). See App.Call.
+// SystemInfo-style queries…) and returns its result. On Windows through WebView2's CallDevToolsProtocolMethod. See App.Call.
 func (w *Window) Call(method string, params any) (json.RawMessage, error) {
 	return w.app.eng.call(w, method, params)
 }
@@ -116,7 +116,7 @@ func (a *App) menus() (menu, dock []MenuItem) {
 }
 
 // Call sends a DevTools protocol command to the browser (not to a page; see Window.Call) and returns its result:
-// what Lightron has no API for. macOS only (ErrUnsupported elsewhere). Lightron relies on the targets it attached
+// what Lightron has no API for. On Windows (one window, no browser-level session) it goes to the window's page. Lightron relies on the targets it attached
 // to; don't detach from them or turn off domains it enabled (Runtime, Page, Inspector).
 func (a *App) Call(method string, params any) (json.RawMessage, error) {
 	return a.eng.call(nil, method, params)

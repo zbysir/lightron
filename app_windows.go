@@ -36,10 +36,14 @@ var (
 
 // win is the Windows engine: WebView2 in a window of the app's own. One window (NewWindow isn't supported yet).
 type win struct {
-	app  *App
-	wv   webview2.WebView
-	hwnd uintptr
-	main *Window
+	app      *App
+	wv       webview2.WebView
+	hwnd     uintptr
+	main     *Window
+	core     unsafe.Pointer // the ICoreWebView2 (cdp_windows.go); nil if unreachable
+	origin   string         // the app's own origin (bridge calls from other sites are dropped)
+	tray     *tray          // KeepRunning (tray_windows.go)
+	quitting bool           // closing for real: WM_CLOSE isn't a hide
 }
 
 func (a *App) run() error {
@@ -105,30 +109,71 @@ func (a *App) run() error {
 	}
 	defer w.Destroy()
 	e.wv, e.hwnd = w, uintptr(w.Window())
+	e.core = coreWebView(w)
+	e.origin = originOf(entry)
 	e.main = &Window{app: a, id: "main"}
 	a.addWindow(e.main)
+	var small uintptr
 	if len(a.opts.Icon) > 0 {
-		e.setIcon(a.opts.Icon)
+		small = e.setIcon(a.opts.Icon)
+	}
+	if a.opts.KeepRunning {
+		e.keepRunning(small)
 	}
 	if err := w.Bind("__lightronPost", func(payload string) { e.message(payload) }); err != nil {
 		return err
 	}
 	w.Init(pageScripts(originOf(entry), a.opts))
-	w.Navigate(pageURL(entry, a.opts.Window.Path))
+	first := pageURL(entry, a.opts.Window.Path)
+	if a.opts.UserAgentSuffix == "" {
+		w.Navigate(first)
+	} else {
+		// The User-Agent over the DevTools protocol (it needs the message loop: after Run starts), then the first page
+		go func() {
+			if r, err := e.cdpCall("Browser.getVersion", nil); err != nil {
+				a.logf("user agent: %v", err)
+			} else {
+				var v struct {
+					UserAgent string `json:"userAgent"`
+				}
+				_ = json.Unmarshal(r, &v)
+				if _, err := e.cdpCall("Network.setUserAgentOverride", map[string]any{"userAgent": v.UserAgent + a.opts.UserAgentSuffix}); err != nil {
+					a.logf("user agent: %v", err)
+				}
+			}
+			w.Dispatch(func() { w.Navigate(first) })
+		}()
+	}
 	go func() {
 		<-a.quit
-		w.Dispatch(w.Terminate)
+		w.Dispatch(func() {
+			e.quitting = true
+			if e.tray != nil {
+				e.tray.remove()
+			}
+			w.Terminate()
+		})
 	}()
 	if a.opts.OnReady != nil {
 		go a.opts.OnReady(a)
 	}
 	w.Run()
+	if e.tray != nil {
+		e.tray.remove()
+	}
 	a.Quit()
 	return nil
 }
 
-// message: the binding runs on the UI thread; nothing slow here.
+// message: the binding runs on the UI thread; nothing slow here. Only the app's own pages may use it
+// (Options.PageScript): the window can show other sites, and the binding is there on every page.
 func (e *win) message(payload string) {
+	if e.core != nil {
+		if o := originOf(source(e.core)); !appOrigin(o, e.origin, e.app.opts.Origins) {
+			e.app.logf("bridge: a call from %q ignored (not the app's page)", o)
+			return
+		}
+	}
 	var p struct {
 		T     string `json:"t"`
 		ID    int64  `json:"id"`
@@ -171,20 +216,30 @@ func (e *win) focus(*Window) {
 	})
 }
 
-func (e *win) close(*Window) { e.app.Quit() }
+// close: with KeepRunning, the window hides (the icon in the notification area brings it back); else the app quits.
+func (e *win) close(*Window) {
+	if e.tray != nil {
+		e.wv.Dispatch(func() { _, _, _ = procShowWindow.Call(e.hwnd, 0) })
+		return
+	}
+	e.app.Quit()
+}
 
 func (e *win) setBadge(string) {}
 
-func (e *win) call(*Window, string, any) (json.RawMessage, error) { return nil, ErrUnsupported }
+// call: the DevTools protocol on the window's page (one window: App.Call goes there too).
+func (e *win) call(_ *Window, method string, params any) (json.RawMessage, error) {
+	return e.cdpCall(method, params)
+}
 
 func (e *win) setMenu() {}
 
 // setIcon: the window's big (Alt+Tab, taskbar) and small (title bar) icons from the PNG, at runtime: no resource
 // compiler needed. (lightron build also puts it in the exe, for Explorer.)
-func (e *win) setIcon(png []byte) {
+func (e *win) setIcon(png []byte) (small uintptr) {
 	img, err := pack.DecodePNG(png)
 	if err != nil {
-		return
+		return 0
 	}
 	data := pack.PNG(pack.Scale(img, 256))
 	for _, size := range []struct{ which, mx, my uintptr }{{1, 11, 12}, {0, 49, 50}} { // ICON_BIG: SM_CXICON; ICON_SMALL: SM_CXSMICON
@@ -193,8 +248,12 @@ func (e *win) setIcon(png []byte) {
 		icon, _, _ := procIconFromRes.Call(uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), 1, 0x00030000, cx, cy, 0)
 		if icon != 0 {
 			_, _, _ = procSendMessage.Call(e.hwnd, 0x0080 /* WM_SETICON */, size.which, icon)
+			if size.which == 0 {
+				small = icon
+			}
 		}
 	}
+	return small
 }
 
 func messageBox(title, text string) {
