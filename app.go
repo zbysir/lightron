@@ -2,6 +2,7 @@ package lightron
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -196,6 +197,39 @@ func (a *App) message(w *Window, payload string) {
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+func originOf(u string) string {
+	pu, err := url.Parse(u)
+	if err != nil {
+		return u
+	}
+	return pu.Scheme + "://" + pu.Host
+}
+
+// pageScripts: what runs in every page before its own scripts. The bridge and Options.Script only on the app's own
+// origins (appOrigin); Options.PageScript everywhere.
+func pageScripts(origin string, opts Options) string {
+	o, _ := json.Marshal(append([]string{origin}, opts.Origins...))
+	return "if (" + string(o) + ".some((p) => p === location.origin || p.includes('://*.') && location.origin.endsWith(p.slice(p.indexOf('*.') + 1)) && location.origin.startsWith(p.slice(0, p.indexOf('*.'))))) {\n" +
+		bridgeJS + "\n" + opts.Script + "\n}\n" + opts.PageScript
+}
+
+// appOrigin: whether pages of this origin are the app's: the one it starts at, or one of Options.Origins ("*." for
+// any subdomain). Same rule as pageScripts' check in the page.
+func appOrigin(origin, start string, more []string) bool {
+	if origin == "" || origin == "null" {
+		return false
+	}
+	for _, p := range append([]string{start}, more...) {
+		if p == origin {
+			return true
+		}
+		if i := strings.Index(p, "://*."); i >= 0 && strings.HasPrefix(origin, p[:i+3]) && strings.HasSuffix(origin, p[i+4:]) && len(origin) > len(p)-1 {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultHost: the last part of a reverse-DNS id, as a host name (com.example.Notes → notes).

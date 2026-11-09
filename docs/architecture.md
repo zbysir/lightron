@@ -60,6 +60,11 @@ The engine starts with `--remote-debugging-pipe`: DevTools protocol messages as 
 `Runtime.addBinding("__lightronPost")`, `Page.addScriptToEvaluateOnNewDocument(bridge.js)`. If a page still committed
 without the bridge, it is reloaded once.
 
+The bridge is only for the app's own pages: the script checks `location.origin` against the app's origins (the
+start page's, `Options.Origins`) before setting up `window.lightron`, and since the binding exists in every page of the
+target, each call is also checked on the Go side: `Runtime.bindingCalled` carries the execution context, whose origin
+Lightron noted from `Runtime.executionContextCreated`. `Options.PageScript` runs everywhere, without the bridge.
+
 Pages of other origins opened from the app (`window.open`, `target=_blank`) are closed and opened in the default
 browser. A new-tab page (the browser's own ⌘N/⌘T) is replaced by a window of the app.
 

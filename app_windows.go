@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"github.com/jchv/go-webview2"
@@ -83,6 +84,10 @@ func (a *App) run() error {
 		entry = srv.entry
 	}
 
+	if len(a.opts.BrowserArgs) > 0 {
+		args := strings.TrimSpace(os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") + " " + strings.Join(a.opts.BrowserArgs, " "))
+		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args)
+	}
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		// Debug turns on WebView2's right-click menu and F12 (developer tools); bridge.js drops the menu where it
 		// isn't useful. Off, both are gone, cut / copy / paste in fields included.
@@ -108,7 +113,7 @@ func (a *App) run() error {
 	if err := w.Bind("__lightronPost", func(payload string) { e.message(payload) }); err != nil {
 		return err
 	}
-	w.Init(bridgeJS + "\n" + a.opts.Script)
+	w.Init(pageScripts(originOf(entry), a.opts))
 	w.Navigate(pageURL(entry, a.opts.Window.Path))
 	go func() {
 		<-a.quit

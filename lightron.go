@@ -41,6 +41,7 @@ type Options struct {
 	Handler http.Handler
 	// Host is the name pages are shown at (http://<Host>/), on macOS. Chrome writes the page's origin under every
 	// web notification; "notes" reads better there than "127.0.0.1:53817". Default: the last part of ID, lowercased.
+	// "-": pages stay at their real address (a backend that checks the Host header).
 	Host string
 
 	// Window is the first window. Path is relative to the page's root ("/" by default).
@@ -60,6 +61,20 @@ type Options struct {
 	// Script is JavaScript run in every page of the app before the page's own scripts, after window.lightron is set
 	// up: a compatibility layer for an existing web app (window.yourNative = …), settings to seed.
 	Script string
+	// PageScript is JavaScript run in every page a window shows, of any site, before the page's own scripts: for an
+	// app whose windows also show other sites (it can add to them, e.g. a panel of the app's own in an iframe).
+	// window.lightron is there only on the app's own pages (the origin of URL / URLFunc / Handler, and Origins):
+	// other sites never get the bridge, nor do Script or Bind reach them.
+	PageScript string
+	// Origins are more origins whose pages are the app's (bridge, Script, Bind), besides the one it starts at:
+	// "http://127.0.0.1:7000", or "http://*.localhost:7000" for any subdomain.
+	Origins []string
+	// BrowserArgs are extra command-line switches for the engine (macOS) / WebView2 (Windows), e.g.
+	// "--disable-features=…". They apply to the app's own profile only.
+	BrowserArgs []string
+	// UserAgentSuffix is appended to the browser's User-Agent, in every window (" MyApp/1.2"), so sites can tell
+	// they are inside the app. macOS only for now.
+	UserAgentSuffix string
 	// OnMessage receives what the page sends with lightron.send(value).
 	OnMessage func(w *Window, msg json.RawMessage)
 	// OnReady runs once the first window has been asked for.

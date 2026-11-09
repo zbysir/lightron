@@ -87,7 +87,8 @@ lightron.getPathForFile(file)          // a dropped / pasted / picked File's pat
 lightron.platform                      // "darwin" | "windows"
 ```
 
-Links to other sites (`<a href>` and `window.open`) open in the default browser. Notifications and the clipboard are
+Links to other sites (`<a href>` and `window.open`) open in the default browser. A window can also navigate to another
+site (an app that shows a web app, say): `window.lightron` and `Bind` are only ever on the app's own origins. Notifications and the clipboard are
 allowed without asking.
 
 ## The Go side
@@ -104,6 +105,10 @@ lightron.Run(lightron.Options{
 	DockMenu []lightron.MenuItem
 	Bind     map[string]any         // functions for lightron.invoke
 	Script   string                 // JS for every page, after window.lightron (a compatibility layer)
+	PageScript string               // JS for every page of any site a window shows (no bridge there)
+	Origins  []string               // more origins that are the app's ("http://*.localhost:7000")
+	BrowserArgs []string            // extra engine switches
+	UserAgentSuffix string          // " MyApp/1.2" after the browser's User-Agent (macOS)
 	OnMessage, OnReady, OnSecondInstance …
 	KeepRunning bool                // stay in the Dock with no window
 })

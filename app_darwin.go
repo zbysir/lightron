@@ -36,6 +36,10 @@ type mac struct {
 	entry   string // the pages' entry, at the page host (http://<Host>/…)
 	origin  string
 	menu    *macMenu
+	ua      string // the User-Agent with Options.UserAgentSuffix ("": none)
+
+	ctxMu   sync.Mutex
+	origins map[string]string // "<session> <execution context id>" → the context's origin: who called the binding
 
 	mu       sync.Mutex
 	launched time.Time // the last newWindow: its window may not have attached yet
@@ -128,6 +132,7 @@ func (a *App) run() error {
 	}
 
 	pageEntry, extra := mapHost(entry, a.opts.Host)
+	extra = append(extra, a.opts.BrowserArgs...)
 	m.entry, m.origin = pageEntry, originOf(pageEntry)
 	chrome, proc, err := m.start(env, extra)
 	if err != nil {
@@ -228,7 +233,7 @@ func (m *mac) start(env, extra []string) (<-chan struct{}, *os.Process, error) {
 // profile. Only for http on this machine: https can't be redirected (the certificate), remote hosts stay as they are.
 func mapHost(entry, host string) (string, []string) {
 	u, err := url.Parse(entry)
-	if err != nil || u.Scheme != "http" || !isLoopback(u.Host) || host == "" {
+	if err != nil || u.Scheme != "http" || !isLoopback(u.Host) || host == "" || host == "-" {
 		return entry, nil
 	}
 	real := u.Host
@@ -237,14 +242,6 @@ func mapHost(entry, host string) (string, []string) {
 		"--host-resolver-rules=MAP " + host + " " + real,
 		"--unsafely-treat-insecure-origin-as-secure=http://" + host,
 	}
-}
-
-func originOf(u string) string {
-	pu, err := url.Parse(u)
-	if err != nil {
-		return u
-	}
-	return pu.Scheme + "://" + pu.Host
 }
 
 func (m *mac) event(msg *cdp.Msg) {
@@ -273,10 +270,42 @@ func (m *mac) event(msg *cdp.Msg) {
 				m.app.removeWindow(w.id)
 			}
 		}
+		m.ctxMu.Lock()
+		for k := range m.origins {
+			if strings.HasPrefix(k, p.SessionID+" ") {
+				delete(m.origins, k)
+			}
+		}
+		m.ctxMu.Unlock()
 		m.checkGone()
-	case "Runtime.bindingCalled":
-		var p struct{ Payload string }
+	case "Runtime.executionContextCreated":
+		var p struct {
+			Context struct {
+				ID     int64  `json:"id"`
+				Origin string `json:"origin"`
+			} `json:"context"`
+		}
 		_ = json.Unmarshal(msg.Params, &p)
+		m.ctxMu.Lock()
+		if m.origins == nil {
+			m.origins = map[string]string{}
+		}
+		m.origins[msg.SessionID+" "+itoa(p.Context.ID)] = p.Context.Origin
+		m.ctxMu.Unlock()
+	case "Runtime.bindingCalled":
+		var p struct {
+			Payload string
+			Context int64 `json:"executionContextId"`
+		}
+		_ = json.Unmarshal(msg.Params, &p)
+		// The binding is on every page the window shows; only the app's own pages may use it (Options.PageScript).
+		m.ctxMu.Lock()
+		origin := m.origins[msg.SessionID+" "+itoa(p.Context)]
+		m.ctxMu.Unlock()
+		if !appOrigin(origin, m.origin, m.app.opts.Origins) {
+			m.app.logf("bridge: a call from %q ignored (not the app's page)", origin)
+			return
+		}
 		if w := m.windowBySession(msg.SessionID); w != nil {
 			go m.bridge(w, p.Payload)
 		}
@@ -339,10 +368,15 @@ func (m *mac) attach(session, target, typ, u, opener string, waiting bool) {
 		{"Runtime.addBinding", map[string]any{"name": "__lightronPost"}},
 		{"Page.enable", nil},
 		{"Inspector.enable", nil},
-		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": bridgeJS + "\n" + m.app.opts.Script}},
+		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.origin, m.app.opts)}},
 	} {
 		if _, err := m.c.Call(session, step.method, step.params); err != nil {
 			m.app.logf("attach %s: %v", step.method, err)
+		}
+	}
+	if ua := m.userAgent(); ua != "" {
+		if _, err := m.c.Call(session, "Emulation.setUserAgentOverride", map[string]any{"userAgent": ua}); err != nil {
+			m.app.logf("attach user agent: %v", err)
 		}
 	}
 	m.app.addWindow(&Window{app: m.app, id: target, session: session})
@@ -366,12 +400,36 @@ func (m *mac) ensureBridge(session string) {
 		if len(parts) == 3 && parts[2] == "true" {
 			return
 		}
-		if len(parts) == 3 && parts[0] != "loading" && parts[1] == m.origin {
+		if len(parts) == 3 && parts[0] != "loading" && appOrigin(parts[1], m.origin, m.app.opts.Origins) {
 			_, _ = m.c.Call(session, "Page.reload", nil)
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// userAgent: the browser's User-Agent plus Options.UserAgentSuffix, asked once ("" without a suffix).
+func (m *mac) userAgent() string {
+	if m.app.opts.UserAgentSuffix == "" {
+		return ""
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ua == "" {
+		r, err := m.c.Call("", "Browser.getVersion", nil)
+		if err != nil {
+			return ""
+		}
+		var v struct {
+			UserAgent string `json:"userAgent"`
+		}
+		_ = json.Unmarshal(r, &v)
+		if v.UserAgent == "" {
+			return ""
+		}
+		m.ua = v.UserAgent + m.app.opts.UserAgentSuffix
+	}
+	return m.ua
 }
 
 func newTabPage(u string) bool {
