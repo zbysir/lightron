@@ -3,19 +3,19 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
-## [0.4.2] - 2026-11-09
-
-### Changed
-
-- Windows: notifications and the clipboard are allowed without asking for the app's own pages, as on macOS (WebView2
-  asked on the first notification and on reading the clipboard). Other sites a window shows still ask.
-
 ## [0.4.3] - 2026-11-09
 
 ### Fixed
 
 - Windows: the bridge no longer takes over links in iframes (WebView2 delivers messages from the top page only, so
   0.4.1's fix couldn't reach them): the page's own handling of its links runs there.
+
+## [0.4.2] - 2026-11-09
+
+### Changed
+
+- Windows: notifications and the clipboard are allowed without asking for the app's own pages, as on macOS (WebView2
+  asked on the first notification and on reading the clipboard). Other sites a window shows still ask.
 
 ## [0.4.1] - 2026-11-09
 
