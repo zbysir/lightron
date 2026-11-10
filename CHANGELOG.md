@@ -10,7 +10,8 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
 - Windows: pages are at `http://<Host>/` as on macOS (`Options.Host`, by default the last part of `ID`), not at
   `127.0.0.1:<port>`: notifications show the app's name as their origin, and the page's storage no longer depends on
   the port. An existing app's pages move to a new origin once, so what they kept in localStorage starts empty;
-  `Host: "-"` keeps the real address.
+  `Host: "-"` keeps the real address. Where WebView2 doesn't take the switches that make the host (it ignored
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` on GitHub's Windows runners), the pages stay at the real address.
 
 ## [0.4.3] - 2026-11-09
 

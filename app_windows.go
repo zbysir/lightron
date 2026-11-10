@@ -89,7 +89,9 @@ func (a *App) run() error {
 		entry = srv.entry
 	}
 
+	real := entry
 	entry, extra := mapHost(entry, a.opts.Host)
+	mapped := entry != real
 	extra = append(extra, a.opts.BrowserArgs...)
 	if len(extra) > 0 {
 		// One string, which WebView2 splits as a command line: a switch with spaces in it (the host rule) is quoted.
@@ -130,12 +132,24 @@ func (a *App) run() error {
 	if err := w.Bind("__lightronPost", func(payload string) { e.message(payload) }); err != nil {
 		return err
 	}
-	w.Init(pageScripts(originOf(entry), a.opts))
+	scriptOpts := a.opts
+	if mapped { // the bridge also at the real address, where the pages go if the host doesn't take (below)
+		scriptOpts.Origins = append([]string{originOf(real)}, a.opts.Origins...)
+	}
+	w.Init(pageScripts(originOf(entry), scriptOpts))
 	first := pageURL(entry, a.opts.Window.Path)
 	// Before the first page, over the DevTools protocol (it needs the message loop: after Run starts): the
 	// permissions, the User-Agent.
 	go func() {
-		e.grantPermissions()
+		if !e.grantPermissions() && mapped {
+			// WebView2 didn't take the host switches: some don't read WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (seen on
+			// GitHub's Windows runners, WebView2 156), and the origin they would make secure can't be granted
+			// anything. The pages stay at their real address, as before Host on Windows.
+			a.logf("the page host %q didn't take; pages at %s", a.opts.Host, originOf(real))
+			e.origin = originOf(real)
+			first = pageURL(real, a.opts.Window.Path)
+			e.grantPermissions()
+		}
 		if a.opts.UserAgentSuffix != "" {
 			if r, err := e.cdpCall("Browser.getVersion", nil); err != nil {
 				a.logf("user agent: %v", err)
@@ -175,15 +189,18 @@ func (a *App) run() error {
 // grantPermissions: notifications and the clipboard without asking, for the app's own pages, as on macOS: WebView2
 // would otherwise ask on the first notification and on reading the clipboard (paste buttons). One by one, as on macOS
 // (Browser.grantPermissions denies every permission it doesn't list). Other sites a window shows keep WebView2's
-// default (it asks).
-func (e *win) grantPermissions() {
+// default (it asks). False if one was refused.
+func (e *win) grantPermissions() bool {
+	ok := true
 	for _, p := range []string{"notifications", "clipboard-read", "clipboard-write"} {
 		if _, err := e.cdpCall("Browser.setPermission", map[string]any{
 			"origin": e.origin, "permission": map[string]any{"name": p, "allowWithoutSanitization": p == "clipboard-write"}, "setting": "granted",
 		}); err != nil {
 			e.app.logf("permission %s: %v", p, err)
+			ok = false
 		}
 	}
+	return ok
 }
 
 // message: the binding runs on the UI thread; nothing slow here. Only the app's own pages may use it
