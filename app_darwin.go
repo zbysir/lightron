@@ -3,7 +3,6 @@ package lightron
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -225,23 +224,6 @@ func (m *mac) start(env, extra []string) (<-chan struct{}, *os.Process, error) {
 		return nil, nil, fmt.Errorf("lightron: the browser didn't answer: %w", err)
 	}
 	return exited, cmd.Process, nil
-}
-
-// mapHost: the pages at http://<host>/ instead of 127.0.0.1:<port>. Chrome writes a web notification's origin under
-// its title, and nothing removes it; "notes" reads better there. The browser maps the name to the real address
-// (--host-resolver-rules) and counts it as a secure origin (notifications, clipboard need one), only in this
-// profile. Only for http on this machine: https can't be redirected (the certificate), remote hosts stay as they are.
-func mapHost(entry, host string) (string, []string) {
-	u, err := url.Parse(entry)
-	if err != nil || u.Scheme != "http" || !isLoopback(u.Host) || host == "" || host == "-" {
-		return entry, nil
-	}
-	real := u.Host
-	u.Host = host
-	return u.String(), []string{
-		"--host-resolver-rules=MAP " + host + " " + real,
-		"--unsafely-treat-insecure-origin-as-secure=http://" + host,
-	}
 }
 
 func (m *mac) event(msg *cdp.Msg) {

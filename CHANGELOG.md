@@ -3,6 +3,15 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.4] - 2026-11-10
+
+### Changed
+
+- Windows: pages are at `http://<Host>/` as on macOS (`Options.Host`, by default the last part of `ID`), not at
+  `127.0.0.1:<port>`: notifications show the app's name as their origin, and the page's storage no longer depends on
+  the port. An existing app's pages move to a new origin once, so what they kept in localStorage starts empty;
+  `Host: "-"` keeps the real address.
+
 ## [0.4.3] - 2026-11-09
 
 ### Fixed
@@ -115,6 +124,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.4]: https://github.com/zbysir/lightron/releases/tag/v0.4.4
 [0.4.3]: https://github.com/zbysir/lightron/releases/tag/v0.4.3
 [0.4.2]: https://github.com/zbysir/lightron/releases/tag/v0.4.2
 [0.4.1]: https://github.com/zbysir/lightron/releases/tag/v0.4.1

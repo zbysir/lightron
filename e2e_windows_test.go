@@ -91,10 +91,11 @@ func TestE2E(t *testing.T) {
 				}
 				results["bridge at load"] = eval(`window.bridgeAtLoad`)
 				results["script at load"] = eval(`window.scriptAtLoad`)
+				results["host"] = eval(`location.host`)
 				results["page script"] = fmt.Sprint(eval(`window.fromPageScript`) != `null`)
 				results["add"] = eval(`lightron.invoke("add", 2, 3)`)
 				results["user agent"] = fmt.Sprint(strings.HasSuffix(eval(`navigator.userAgent`), ` LightronE2E/1"`))
-				if r, err := w.Call("Network.getCookies", map[string]any{"urls": []string{"http://127.0.0.1/"}}); err == nil && strings.Contains(string(r), "cookies") {
+				if r, err := w.Call("Network.getCookies", map[string]any{"urls": []string{"http://e2e/"}}); err == nil && strings.Contains(string(r), "cookies") {
 					results["cookies"] = "ok"
 				}
 
@@ -137,6 +138,7 @@ func TestE2E(t *testing.T) {
 		"add":                            "5",
 		"user agent":                     "true",
 		"cookies":                        "ok",
+		"host":                           `"e2e"`,
 		"permissions":                    `"granted,granted,granted"`,
 		"notification permission":        `"granted"`,
 		"other: notification permission": `"default"`,

@@ -39,8 +39,10 @@ type Options struct {
 	// Handler serves the pages instead: Lightron runs it on a private loopback port that only the app's windows can
 	// use (a secret cookie, set on the first load).
 	Handler http.Handler
-	// Host is the name pages are shown at (http://<Host>/), on macOS. Chrome writes the page's origin under every
-	// web notification; "notes" reads better there than "127.0.0.1:53817". Default: the last part of ID, lowercased.
+	// Host is the name pages are shown at (http://<Host>/), when the page is http on this machine. The browser writes
+	// the page's origin under every web notification ("notes" reads better there than "127.0.0.1:53817"), and keeps
+	// the page's storage (localStorage, IndexedDB) by origin: a fixed name keeps it when the port changes. Default:
+	// the last part of ID, lowercased.
 	// "-": pages stay at their real address (a backend that checks the Host header).
 	Host string
 

@@ -89,9 +89,15 @@ func (a *App) run() error {
 		entry = srv.entry
 	}
 
-	if len(a.opts.BrowserArgs) > 0 {
-		args := strings.TrimSpace(os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") + " " + strings.Join(a.opts.BrowserArgs, " "))
-		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args)
+	entry, extra := mapHost(entry, a.opts.Host)
+	extra = append(extra, a.opts.BrowserArgs...)
+	if len(extra) > 0 {
+		// One string, which WebView2 splits as a command line: a switch with spaces in it (the host rule) is quoted.
+		args := os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+		for _, x := range extra {
+			args += " " + quoteArg(x)
+		}
+		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", strings.TrimSpace(args))
 	}
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		// Debug turns on WebView2's right-click menu and F12 (developer tools); bridge.js drops the menu where it
@@ -297,4 +303,15 @@ func messageBox(title, text string) {
 	t, _ := windows.UTF16PtrFromString(text)
 	c, _ := windows.UTF16PtrFromString(title)
 	_, _, _ = procMessageBox.Call(0, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), 0x10 /* MB_ICONERROR */)
+}
+
+// quoteArg: a switch as one word of a Windows command line ("--k=v w" → --k="v w"; Chromium drops the quotes).
+func quoteArg(s string) string {
+	if !strings.ContainsAny(s, " \t") {
+		return s
+	}
+	if k, v, ok := strings.Cut(s, "="); ok && strings.HasPrefix(k, "--") && !strings.ContainsAny(k, " \t") {
+		return k + "=\"" + v + "\""
+	}
+	return "\"" + s + "\""
 }

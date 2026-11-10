@@ -49,9 +49,7 @@ The engine starts with `--remote-debugging-pipe`: DevTools protocol messages as 
 - `--no-startup-window`; windows are opened by running the engine again with `--app=<url>`, which the running
   browser takes over (its process singleton). `--app` windows have a bare title bar.
 - `--test-type`, on both command lines: Chrome otherwise shows a warning bar about the flags below.
-- `--host-resolver-rules=MAP <Host> 127.0.0.1:<port>` and `--unsafely-treat-insecure-origin-as-secure=http://<Host>`:
-  pages are at `http://<Host>/` (Chrome writes the origin under every notification; "notes" reads better than
-  "127.0.0.1:53817"), which is a secure context (clipboard, notifications) without a certificate.
+- The host switches (see "Both": the page host).
 - `--accept-lang` from the system's languages (a fresh profile would say en-US); translation off in Preferences.
 - `--window-size`: the size of a window with no saved placement; after that the browser remembers.
 
@@ -120,6 +118,12 @@ the bridge added with `AddScriptToExecuteOnDocumentCreated`, the binding as a We
 - **The page server**: an `Options.Handler` is served on `127.0.0.1:<random port>`. Any local program can reach
   that port, so requests need a secret cookie. On macOS it is put into the browser with `Storage.setCookies` over the
   pipe; on Windows the first navigation is a login URL (in-process, never on a command line) that sets it.
+- **The page host**: `--host-resolver-rules=MAP <Host> 127.0.0.1:<port>` and
+  `--unsafely-treat-insecure-origin-as-secure=http://<Host>` (on the engine's command line on macOS, in
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` on Windows, quoted): pages are at `http://<Host>/`, a secure context
+  (clipboard, notifications) without a certificate. The browser writes the origin under every notification ("notes"
+  reads better than "127.0.0.1:53817"), and keeps a page's storage by origin, so a port that changes between starts
+  doesn't lose it. The mapping is fixed when the browser starts.
 - **Single instance**: a unix socket in the data directory (Windows 10+ has them too). A second start tells the first
   (`OnSecondInstance`, by default: bring a window up) and exits.
 - **Bindings** (`bind.go`): reflection. Arguments are JSON-decoded into the function's parameter types; a first
