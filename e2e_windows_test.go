@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -94,7 +95,12 @@ func TestE2E(t *testing.T) {
 				results["host"] = eval(`location.host`)
 				if results["host"] != `"e2e"` {
 					t.Logf("page: %s %s", eval(`location.href`), eval(`document.body && document.body.innerText`))
-					t.Logf("proxy env: %q %q", os.Getenv("HTTP_PROXY"), os.Getenv("HTTPS_PROXY"))
+					t.Logf("args env: %q", os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"))
+					if r, err := a.Call("Browser.getVersion", nil); err == nil {
+						t.Logf("version: %s", r)
+					}
+					cl, _ := exec.Command("powershell", "-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { $_.CommandLine }`).CombinedOutput()
+					t.Logf("browser process: %s", cl)
 				}
 				results["page script"] = fmt.Sprint(eval(`window.fromPageScript`) != `null`)
 				results["add"] = eval(`lightron.invoke("add", 2, 3)`)
