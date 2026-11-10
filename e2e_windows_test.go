@@ -92,6 +92,10 @@ func TestE2E(t *testing.T) {
 				results["bridge at load"] = eval(`window.bridgeAtLoad`)
 				results["script at load"] = eval(`window.scriptAtLoad`)
 				results["host"] = eval(`location.host`)
+				if results["host"] != `"e2e"` {
+					t.Logf("page: %s %s", eval(`location.href`), eval(`document.body && document.body.innerText`))
+					t.Logf("proxy env: %q %q", os.Getenv("HTTP_PROXY"), os.Getenv("HTTPS_PROXY"))
+				}
 				results["page script"] = fmt.Sprint(eval(`window.fromPageScript`) != `null`)
 				results["add"] = eval(`lightron.invoke("add", 2, 3)`)
 				results["user agent"] = fmt.Sprint(strings.HasSuffix(eval(`navigator.userAgent`), ` LightronE2E/1"`))
