@@ -83,7 +83,8 @@ await lightron.invoke("name", ...args) // call a function in Options.Bind; rejec
 lightron.send(value)                   // to Options.OnMessage
 lightron.on("event", (data) => {})     // from app.Emit / window.Emit; returns an unsubscribe function
 lightron.focus()                       // bring this window (and the app) forward, e.g. from a notification's onclick
-lightron.getPathForFile(file)          // a dropped / pasted / picked File's path on disk ("" on Windows for now)
+lightron.getPathForFile(file)          // a dropped / pasted / picked File's path on disk ("" on Windows for now;
+                                       // also in an app's page in another site's iframe, macOS)
 lightron.platform                      // "darwin" | "windows"
 ```
 

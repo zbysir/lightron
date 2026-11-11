@@ -11,11 +11,16 @@
   const calls = new Map(); // invoke id → {resolve, reject}
   const listeners = new Map(); // event → Set(fn)
 
-  // ---- files' paths (macOS) ----
+  // ---- files' paths ----
   // A File's path on disk is something only the browser knows (DOM.getFileInfo); the shell can only answer
   // asynchronously, while code reading it (an upload handler) wants it at once. So the paths are looked up *before*
   // the page sees the files: a dropped / picked / pasted file event is held in the capture phase, each File's path
   // fetched, and the event dispatched again with the very same File objects. A few ms, once per drop.
+  // In an iframe on Windows the binding's messages don't reach the shell (WebView2 delivers the top page's only): the
+  // shell adds one of the DevTools protocol's there instead, window.__lightronFramePost, for paths only.
+  const framed = platform === "windows" && window.top !== window;
+  const askPath = (m) => (framed ? window.__lightronFramePost : window.__lightronPost)(JSON.stringify(m));
+  const canAsk = () => platform === "darwin" || (platform === "windows" && (!framed || typeof window.__lightronFramePost === "function"));
   const paths = new WeakMap();
   const parked = new Map();
   window.__lightronFiles = parked;
@@ -24,12 +29,14 @@
       const id = ++seq;
       calls.set(id, { resolve, reject: resolve });
       parked.set(id, file);
-      post({ t: "path", id });
+      askPath({ t: "path", id });
+      // An answer that never comes mustn't swallow the drop
+      setTimeout(() => window.lightron.__settle(id, "", null), 5000);
     });
   const resolveAll = (files) => Promise.all(files.map((f) => (paths.has(f) ? null : ask(f).then((p) => paths.set(f, p || "")))));
   const replaying = new WeakSet();
   const hold = (e, files, again) => {
-    if (platform !== "darwin" || !e.isTrusted || replaying.has(e) || !files.length || files.every((f) => paths.has(f))) return;
+    if (!canAsk() || !e.isTrusted || replaying.has(e) || !files.length || files.every((f) => paths.has(f))) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     const target = e.target;
@@ -144,7 +151,7 @@
     },
     /** Brings this window and the app to the front (e.g. from a notification's click). */
     focus: () => post({ t: "focus" }),
-    /** A picked / dropped / pasted File's path on disk, synchronously ("" if it has none). macOS. */
+    /** A picked / dropped / pasted File's path on disk, synchronously ("" if it has none). */
     getPathForFile: (file) => paths.get(file) || "",
     // ---- for the Go side ----
     __settle: (id, value, error) => {
