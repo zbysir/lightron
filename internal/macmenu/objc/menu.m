@@ -395,7 +395,15 @@ static void connectShell(NSString *path) {
       close(fd);
       usleep(200 * 1000);
     }
-    if (sock >= 0) readLoop();
+    if (sock >= 0) {
+      readLoop();
+      return;
+    }
+    // The Go side never answered (it died before we were up): nobody will drive or close this browser. Quit.
+    dbg(@"no shell: quitting");
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [NSApp terminate:nil];
+    });
   });
 }
 

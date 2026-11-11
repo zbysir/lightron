@@ -32,6 +32,11 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
 - macOS: after the last window closed, the Dock icon stayed while the browser shut down (seconds, on a well-used
   profile), and clicking it opened a window again (several, clicking fast). The engine leaves the Dock at once, and
   no window opens once the app is quitting; clicks on the Dock icon while a window is still opening don't open more.
+- Opening the app while it is quitting (its browser still shutting down) started a second browser on the same
+  profile, which handed over to the old one and exited: the icon showed up and went away, or the app didn't start.
+  The quitting instance now answers "quitting <pid>"; the new one waits for that process, and on macOS for the
+  browser still on the profile, then starts. Clicks while the app is still opening its window don't open more
+  windows; the engine quits if its shell never connects (no browser left behind showing a network error).
 - macOS: a popup the page opened past the bridge on another of the app's origins was closed and sent to the default
   browser.
 

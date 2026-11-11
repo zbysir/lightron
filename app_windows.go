@@ -60,8 +60,8 @@ func (a *App) run() error {
 		return err
 	}
 	e := &win{app: a}
-	a.eng = e
-	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second)
+	a.setEngine(e)
+	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second, a.quitting, a.opts.Logf)
 	if other {
 		return nil
 	}
@@ -283,6 +283,8 @@ func (e *win) newWindow(string) error {
 }
 
 func (e *win) ownOrigin() string { return e.origin }
+
+func (e *win) reopen() { e.app.FocusOrOpen() } // one window: it is there, or the app is quitting
 
 func (e *win) eval(_ *Window, js string) error {
 	e.wv.Dispatch(func() { e.wv.Eval(js) })

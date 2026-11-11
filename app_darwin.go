@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -71,12 +72,16 @@ func (a *App) run() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second)
+	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second, a.quitting, a.opts.Logf)
 	if other {
 		// The running app can't bring itself forward (macOS 14 lets only the app in front hand activation over, and
 		// the running one is in the background). This process was started by the person (they opened the app again):
 		// asking LaunchServices to open the engine activates it, and the reopen it gets brings a window up (menu.m).
-		_ = exec.Command("open", "-b", a.opts.ID+".engine").Run()
+		// Only if the engine runs: not running (the first instance is still starting it), LaunchServices would start
+		// it for this, as for a link (menu.m's coldStart), and that starts the app a second time
+		if out, _ := exec.Command("lsappinfo", "find", "bundleid="+a.opts.ID+".engine").Output(); len(strings.TrimSpace(string(out))) > 0 {
+			_ = exec.Command("open", "-b", a.opts.ID+".engine").Run()
+		}
 		return nil
 	}
 	if ln != nil {
@@ -144,7 +149,7 @@ func (a *App) run() error {
 	}
 
 	m := &mac{app: a, exe: exe, profile: filepath.Join(dir, "profile"), allGone: make(chan struct{})}
-	a.eng = m
+	a.setEngine(m)
 	var env []string
 	if exe != browser { // the menu library loads only into the re-signed copy
 		if libErr != nil {
@@ -177,6 +182,7 @@ func (a *App) run() error {
 		m.entry, m.origin = pageEntry, originOf(pageEntry)
 	}
 	extra = append(extra, a.opts.BrowserArgs...)
+	m.waitProfileFree()
 	chrome, proc, err := m.start(env, extra)
 	if err != nil {
 		return err
@@ -202,6 +208,7 @@ func (a *App) run() error {
 		case <-a.quit:
 		case <-m.allGone:
 		case <-chrome:
+			a.logf("the browser quit before the app's pages were ready")
 		}
 		if r.err != nil || r.url == "" {
 			_, _ = m.c.Call("", "Browser.close", nil)
@@ -705,6 +712,7 @@ func (m *mac) checkGone() {
 	m.mu.Lock()
 	m.closing = true // from now on no window opens again (reopen, newWindow)
 	m.mu.Unlock()
+	m.app.closing.Store(true)
 	if m.menu != nil {
 		m.menu.quitting() // out of the Dock at once
 	}
@@ -918,5 +926,21 @@ func detach() bool {
 func (m *mac) waitWindow(d time.Duration) {
 	for end := time.Now().Add(d); time.Now().Before(end) && len(m.app.Windows()) == 0; {
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// waitProfileFree: a browser still on this profile (the app quit a moment ago and the browser is still shutting
+// down) would take the one about to start: it hands over to the old one and exits. Wait for it, at most 15 s.
+func (m *mac) waitProfileFree() {
+	pat := "--user-data-dir=" + regexp.QuoteMeta(m.profile) + "( |$)"
+	start := time.Now()
+	for time.Since(start) < 15*time.Second {
+		if exec.Command("pgrep", "-f", pat).Run() != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		m.app.logf("waited %v for the previous browser to quit", d.Round(100*time.Millisecond))
 	}
 }

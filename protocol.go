@@ -52,7 +52,7 @@ func (a *App) second(urls []string) {
 	}
 	if a.opts.OnSecondInstance != nil {
 		a.opts.OnSecondInstance(a)
-	} else {
-		a.FocusOrOpen()
+	} else if eng := a.engine(); eng != nil { // nil: still starting, its window is on its way
+		eng.reopen()
 	}
 }

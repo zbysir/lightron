@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // App is a running app.
@@ -16,6 +17,7 @@ type App struct {
 	windows map[string]*Window
 	quit    chan struct{}
 	once    sync.Once
+	closing atomic.Bool // quitting: a second instance waits for this process to be gone (single.go)
 
 	eng engine // the platform's (app_darwin.go, app_windows.go)
 }
@@ -30,6 +32,7 @@ type engine interface {
 	call(w *Window, method string, params any) (json.RawMessage, error)
 	setMenu()
 	ownOrigin() string // where the app's pages start (Options.Origins are on top of it)
+	reopen()           // the app opened again: bring a window up, or open one (not while one is still opening)
 }
 
 // Window is one window of the app.
@@ -125,7 +128,24 @@ func (a *App) Call(method string, params any) (json.RawMessage, error) {
 }
 
 // Quit closes the windows and makes Run return.
-func (a *App) Quit() { a.once.Do(func() { close(a.quit) }) }
+func (a *App) Quit() {
+	a.closing.Store(true)
+	a.once.Do(func() { close(a.quit) })
+}
+
+func (a *App) quitting() bool { return a.closing.Load() }
+
+func (a *App) engine() engine {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.eng
+}
+
+func (a *App) setEngine(e engine) {
+	a.mu.Lock()
+	a.eng = e
+	a.mu.Unlock()
+}
 
 // FocusOrOpen brings a window up, or opens one if there is none.
 func (a *App) FocusOrOpen() {
