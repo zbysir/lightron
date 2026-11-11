@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.9] - 2026-11-11
+
+### Fixed
+
+- Windows installer: an updater that starts it and quits without waiting (an older app's) could still be up when the
+  installer killed the running app's process tree, and the installer was in that tree: it killed itself, leaving the
+  app closed and not updated. It now gives a running app up to five seconds to quit before killing it.
+- Windows installer: run with `/S` (an update), it shows its progress window anyway. The app has just closed, and
+  ten seconds with nothing on screen looked like a crash.
+
 ## [0.4.8] - 2026-11-11
 
 ### Added
@@ -192,6 +202,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.9]: https://github.com/zbysir/lightron/releases/tag/v0.4.9
 [0.4.8]: https://github.com/zbysir/lightron/releases/tag/v0.4.8
 [0.4.7]: https://github.com/zbysir/lightron/releases/tag/v0.4.7
 [0.4.6]: https://github.com/zbysir/lightron/releases/tag/v0.4.6

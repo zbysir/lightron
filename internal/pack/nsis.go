@@ -7,7 +7,8 @@ import (
 
 // NSISScript is the Windows installer (makensis): per user, no admin rights, into %LOCALAPPDATA%\Programs\<Name>;
 // Start menu and desktop shortcuts; an entry in Installed apps; it starts the app when done. An update runs it with /S
-// (update.Install): it installs over the installed one, then starts it.
+// (update.Install): it installs over the installed one, then starts it, showing its progress window all the same.
+// It waits up to five seconds for a running app to quit before killing it (an older updater quits after starting it).
 func NSISScript(d NSIS) (string, error) {
 	t, err := template.New("nsi").Funcs(template.FuncMap{"winpath": func(p string) string { return strings.ReplaceAll(p, "/", "\\") }}).Parse(nsisTemplate)
 	if err != nil {
@@ -51,8 +52,28 @@ ShowInstDetails nevershow
 AutoCloseWindow true
 Page instfiles
 
+Function .onInit
+  ; An update runs this with /S. Show the progress window anyway: the app has just closed, and ten seconds with
+  ; nothing on screen look like a crash (people then start the app again in the middle of the install).
+  IfSilent 0 +2
+    SetSilent normal
+FunctionEnd
+
 Section
-  ; the app may be running (a manual reinstall; an update quits it first): its files can't be replaced while in use.
+  ; An updater that starts this installer and then quits (an older app's: it doesn't wait) may still be up for a
+  ; moment, and this installer is its child: killing its tree now would kill the installer too. Give it a few
+  ; seconds to go on its own first.
+  StrCpy $1 0
+  wait_quit:
+    nsExec::Exec 'cmd /c tasklist /FI "IMAGENAME eq {{.Exe}}" /NH | find /I "{{.Exe}}"'
+    Pop $0
+    StrCmp $0 "0" 0 quit_done
+    IntOp $1 $1 + 1
+    IntCmp $1 20 quit_done
+    Sleep 250
+    Goto wait_quit
+  quit_done:
+  ; the app may be running (a manual reinstall): its files can't be replaced while in use.
   ; What it started (a backend on a pipe) goes with it.
   nsExec::Exec 'taskkill /F /T /IM "{{.Exe}}"'
   Sleep 1000
