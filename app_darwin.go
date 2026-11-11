@@ -511,8 +511,13 @@ func (m *mac) bridge(w *Window, session, payload string) {
 		return
 	}
 	if session != w.session {
-		// The answer would go to the top page, whose calls are numbered on their own
-		m.app.logf("bridge: only files' paths are answered in an iframe")
+		// A link out (the bridge took the click over): nothing to answer, and only http(s) / mailto open
+		if u, ok := externalOpen(payload); ok {
+			go openExternal(u)
+			return
+		}
+		// Anything else would be answered on the top page, whose calls are numbered on their own
+		m.app.logf("bridge: only files' paths and links out are answered in an iframe")
 		return
 	}
 	m.app.message(w, payload)

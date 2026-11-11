@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -272,22 +271,6 @@ func (e *win) close(*Window) {
 }
 
 func (e *win) setBadge(string) {}
-
-// externalOpen: a bridge message asking to open an http(s) address in the default browser
-func externalOpen(payload string) (string, bool) {
-	var m struct {
-		T   string `json:"t"`
-		URL string `json:"url"`
-	}
-	if json.Unmarshal([]byte(payload), &m) != nil || m.T != "open" {
-		return "", false
-	}
-	u, err := url.Parse(m.URL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return "", false
-	}
-	return u.String(), true
-}
 
 // call: the DevTools protocol on the window's page (one window: App.Call goes there too).
 func (e *win) call(_ *Window, method string, params any) (json.RawMessage, error) {

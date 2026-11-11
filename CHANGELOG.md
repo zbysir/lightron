@@ -3,6 +3,13 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.6] - 2026-11-11
+
+### Fixed
+
+- macOS: a link out clicked in an app's page in another site's iframe (0.4.5 gave those the bridge) did nothing: the
+  bridge took the click over and the shell dropped the message. It opens in the default browser again.
+
 ## [0.4.5] - 2026-11-11
 
 ### Fixed
@@ -138,6 +145,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.6]: https://github.com/zbysir/lightron/releases/tag/v0.4.6
 [0.4.5]: https://github.com/zbysir/lightron/releases/tag/v0.4.5
 [0.4.4]: https://github.com/zbysir/lightron/releases/tag/v0.4.4
 [0.4.3]: https://github.com/zbysir/lightron/releases/tag/v0.4.3
