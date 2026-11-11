@@ -3,7 +3,7 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
-## [Unreleased]
+## [0.4.8] - 2026-11-11
 
 ### Added
 
@@ -192,6 +192,8 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.8]: https://github.com/zbysir/lightron/releases/tag/v0.4.8
+[0.4.7]: https://github.com/zbysir/lightron/releases/tag/v0.4.7
 [0.4.6]: https://github.com/zbysir/lightron/releases/tag/v0.4.6
 [0.4.5]: https://github.com/zbysir/lightron/releases/tag/v0.4.5
 [0.4.4]: https://github.com/zbysir/lightron/releases/tag/v0.4.4
