@@ -83,8 +83,8 @@ await lightron.invoke("name", ...args) // call a function in Options.Bind; rejec
 lightron.send(value)                   // to Options.OnMessage
 lightron.on("event", (data) => {})     // from app.Emit / window.Emit; returns an unsubscribe function
 lightron.focus()                       // bring this window (and the app) forward, e.g. from a notification's onclick
-lightron.getPathForFile(file)          // a dropped / pasted / picked File's path on disk ("" on Windows for now;
-                                       // also in an app's page in another site's iframe, macOS)
+lightron.getPathForFile(file)          // a dropped / pasted / picked File's path on disk ("" if it has none);
+                                       // also in an app's page in another site's iframe
 lightron.platform                      // "darwin" | "windows"
 ```
 
@@ -149,7 +149,7 @@ Know these before you choose it:
   dialog. It happens once per browser version.
 - **macOS 11+, Windows 10/11** (WebView2 comes with Windows 11 and current Windows 10; otherwise the app opens its
   download page). **Linux isn't supported yet.**
-- **Windows**: one window per app for now; `getPathForFile` returns `""`; the menu bar options are macOS's
+- **Windows**: one window per app for now; the menu bar options are macOS's
   (`KeepRunning` puts an icon in the notification area instead).
 - **Signing**: `lightron build` signs ad hoc. For distribution outside your own machines, sign with your Developer ID
   and notarize the `.app` (macOS), sign the installer (Windows). The browser copy is made and signed on the user's

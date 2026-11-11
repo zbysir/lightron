@@ -3,7 +3,7 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
-## [Unreleased]
+## [0.4.5] - 2026-11-11
 
 ### Fixed
 
@@ -11,6 +11,10 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
   its own process, which the bridge never reached: it has `window.lightron` now, and `getPathForFile` answers there
   (a file or folder dropped on the panel). Only files' paths are answered in such an iframe; `invoke` and events stay
   the top page's.
+- Windows: `getPathForFile` answers (it returned `""`): in the page, and in an app's page in an iframe, of the same
+  site or another. Over the DevTools protocol (`DOM.getFileInfo`); iframes use a binding of the protocol's, WebView2
+  delivering the top page's messages only. Needs WebView2 1.0.1245 or later for iframes of another site.
+- A file's path that isn't answered within 5 s is `""`: a drop is never held for good.
 
 ## [0.4.4] - 2026-11-10
 
@@ -134,6 +138,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.5]: https://github.com/zbysir/lightron/releases/tag/v0.4.5
 [0.4.4]: https://github.com/zbysir/lightron/releases/tag/v0.4.4
 [0.4.3]: https://github.com/zbysir/lightron/releases/tag/v0.4.3
 [0.4.2]: https://github.com/zbysir/lightron/releases/tag/v0.4.2
