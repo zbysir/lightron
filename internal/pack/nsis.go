@@ -108,6 +108,9 @@ Function .onInstSuccess
 FunctionEnd
 
 Section "Uninstall"
+  ; the app may be running: its files can't be deleted while in use (they'd be left behind)
+  nsExec::Exec 'taskkill /F /T /IM "{{.Exe}}"'
+  Sleep 1000
   RMDir /r "$INSTDIR"
   Delete "$SMPROGRAMS\{{.Name}}.lnk"
   Delete "$DESKTOP\{{.Name}}.lnk"

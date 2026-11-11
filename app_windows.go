@@ -29,6 +29,7 @@ var (
 	procSendMessage = user32.NewProc("SendMessageW")
 	procShowWindow  = user32.NewProc("ShowWindow")
 	procSetFore     = user32.NewProc("SetForegroundWindow")
+	procAllowFore   = user32.NewProc("AllowSetForegroundWindow")
 	procIsIconic    = user32.NewProc("IsIconic")
 	procGetMetrics  = user32.NewProc("GetSystemMetrics")
 	procIconFromRes = user32.NewProc("CreateIconFromResourceEx")
@@ -61,6 +62,10 @@ func (a *App) run() error {
 	}
 	e := &win{app: a}
 	a.setEngine(e)
+	// Opened again, this process (started by the person) may bring a window forward; the running instance, in the
+	// background, may not. Let any process do it, before telling the running one: its SetForegroundWindow (focus)
+	// is then allowed.
+	_, _, _ = procAllowFore.Call(uintptr(0xFFFFFFFF)) // ASFW_ANY
 	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second, a.quitting, a.opts.Logf)
 	if other {
 		return nil
@@ -196,7 +201,12 @@ func (a *App) run() error {
 			}
 		}
 		e.watchFrames()
-		w.Dispatch(func() { w.Navigate(first) })
+		navigated := make(chan struct{})
+		w.Dispatch(func() { w.Navigate(first); close(navigated) })
+		<-navigated
+		// Links the app was started with, once the window is on its way to the app's pages (as on macOS): handled
+		// before, they went to the splash, and the navigation above took the window back to the start page
+		a.openURLs(a.urlsIn(os.Args[1:]))
 	}()
 	go func() {
 		<-a.quit
@@ -211,7 +221,6 @@ func (a *App) run() error {
 	if len(a.opts.Protocols) > 0 {
 		go registerProtocols(a.opts.Name, a.opts.Protocols)
 	}
-	go a.openURLs(a.urlsIn(os.Args[1:])) // started by a link
 	if a.opts.OnReady != nil {
 		go a.opts.OnReady(a)
 	}

@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.10] - 2026-11-11
+
+### Fixed
+
+- Windows: a link the app was started with (it wasn't running) landed on the start page: it was handled while the
+  splash showed, and the window then went to the app's start page over it. Links now come after that, as on macOS.
+- Windows: opening the app again didn't bring its window forward (the running instance, in the background, may not
+  take the foreground). The instance the person started lets it first (`AllowSetForegroundWindow`).
+- Windows: uninstalling while the app runs left its files behind (in use): the uninstaller stops the app first.
+
 ## [0.4.9] - 2026-11-11
 
 ### Fixed
@@ -202,6 +212,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.10]: https://github.com/zbysir/lightron/releases/tag/v0.4.10
 [0.4.9]: https://github.com/zbysir/lightron/releases/tag/v0.4.9
 [0.4.8]: https://github.com/zbysir/lightron/releases/tag/v0.4.8
 [0.4.7]: https://github.com/zbysir/lightron/releases/tag/v0.4.7

@@ -36,3 +36,15 @@ func TestNSISUpdateWaitsAndShows(t *testing.T) {
 		t.Error("missing SetSilent normal")
 	}
 }
+
+func TestNSISUninstallStopsApp(t *testing.T) {
+	s, err := NSISScript(NSIS{Name: "Notes", Exe: "notes.exe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, un, _ := strings.Cut(s, `Section "Uninstall"`)
+	kill := strings.Index(un, `taskkill /F /T /IM "notes.exe"`)
+	if kill < 0 || kill > strings.Index(un, `RMDir /r "$INSTDIR"`) {
+		t.Errorf("the uninstaller should stop the app before deleting its files:\n%s", un)
+	}
+}
