@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.7] - 2026-11-11
+
+### Fixed
+
+- macOS: Quit (the Dock menu's, a quit Apple event, the app menu's Quit) left a `KeepRunning` app in the Dock with no
+  window, and clicking the Dock icon brought none back: Chrome answered Quit by closing its windows and starting its own
+  shutdown, while the engine process stayed up for the debugging pipe, so the shell saw only "no window left". Quit now
+  goes to the shell, which closes the browser and returns from `Run`, `KeepRunning` or not. Closing the last window
+  still keeps a `KeepRunning` app running.
+
 ## [0.4.6] - 2026-11-11
 
 ### Fixed

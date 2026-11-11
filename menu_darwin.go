@@ -66,6 +66,8 @@ func (mm *macMenu) read(c net.Conn) {
 			switch arg {
 			case "reopen": // a click on the Dock icon
 				go mm.m.app.FocusOrOpen()
+			case "quit": // the Quit item (⌘Q), and the Dock menu's Quit / a quit Apple event (menu.m's ourShouldTerminate)
+				mm.m.app.Quit()
 			case "reload":
 				if w := mm.m.focusedWindow(); w != nil {
 					_, _ = mm.m.c.Call(w.session, "Page.reload", nil)
@@ -84,12 +86,17 @@ func (mm *macMenu) read(c net.Conn) {
 }
 
 // activate asks the library to bring the app forward from inside the browser process.
-func (mm *macMenu) activate() {
+func (mm *macMenu) activate() { mm.send("activate") }
+
+// quitting tells the library the browser is being closed on purpose, so Chrome's own quit path isn't sent back here.
+func (mm *macMenu) quitting() { mm.send("quitting") }
+
+func (mm *macMenu) send(line string) {
 	mm.mu.Lock()
 	conns := append([]net.Conn(nil), mm.conns...)
 	mm.mu.Unlock()
 	for _, c := range conns {
-		_, _ = c.Write([]byte("activate\n"))
+		_, _ = c.Write([]byte(line + "\n"))
 	}
 }
 
@@ -161,6 +168,10 @@ func (mm *macMenu) items(in []MenuItem) []specItem {
 			mm.click[n] = it.Click
 			mm.mu.Unlock()
 			s["send"] = fmt.Sprintf("click %d", n)
+		case it.Role == "quit":
+			// Not the browser's terminate: Chrome answers it with its own quit (Warn Before Quitting's "hold ⌘Q", then
+			// closing windows while the process stays up). The Go side quits the app instead.
+			s["send"] = "action quit"
 		case roleSelectors[it.Role] != "":
 			s["sel"] = roleSelectors[it.Role]
 		case roleBrowser[it.Role] != "":
@@ -187,7 +198,7 @@ func orDefault(s, d string) string {
 // its own items, found by action or key).
 var (
 	roleSelectors = map[string]string{
-		"hide": "hide:", "hideOthers": "hideOtherApplications:", "unhide": "unhideAllApplications:", "quit": "terminate:",
+		"hide": "hide:", "hideOthers": "hideOtherApplications:", "unhide": "unhideAllApplications:",
 		"undo": "undo:", "redo": "redo:", "cut": "cut:", "copy": "copy:", "paste": "paste:", "selectAll": "selectAll:",
 		"minimize": "performMiniaturize:", "zoom": "performZoom:", "front": "arrangeInFront:", "close": "performClose:",
 	}

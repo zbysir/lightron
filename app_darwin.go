@@ -174,6 +174,9 @@ func (a *App) run() error {
 	m.mu.Lock()
 	m.closing = true
 	m.mu.Unlock()
+	if m.menu != nil {
+		m.menu.quitting()
+	}
 	_, _ = m.c.Call("", "Browser.close", nil)
 	select {
 	case <-chrome:

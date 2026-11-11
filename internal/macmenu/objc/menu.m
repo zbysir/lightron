@@ -22,6 +22,7 @@ static NSMenu *chromes;       // Chrome's own, the source of the items we copy
 static NSArray *spec;         // the last menu the Go side sent
 static id target;
 static NSMenu *dockMenu;      // the Dock icon's menu (spec role "dock"); nil = only the system's items
+static volatile BOOL shellQuitting; // Quit goes to Chrome now, not to the Go side (ourShouldTerminate)
 static FILE *dbgf; // $LIGHTRON_MENU_LOG, for debugging (LIGHTRON_DEBUG=1)
 #define dbg(...)                                                                  \
   do {                                                                            \
@@ -241,7 +242,12 @@ static void readLoop(void) {
       [buf replaceBytesInRange:NSMakeRange(0, nl - b + 1) withBytes:NULL length:0];
       id v = [NSJSONSerialization JSONObjectWithData:line options:0 error:nil];
       dbg(@"got a line of %lu bytes", (unsigned long)line.length);
-      if ([[[NSString alloc] initWithData:line encoding:NSUTF8StringEncoding] isEqualToString:@"activate"]) {
+      NSString *text = [[NSString alloc] initWithData:line encoding:NSUTF8StringEncoding];
+      if ([text isEqualToString:@"quitting"]) { // the Go side is closing the browser: let Quit through (ourShouldTerminate)
+        shellQuitting = YES;
+        continue;
+      }
+      if ([text isEqualToString:@"activate"]) {
         // The Go side bringing the app forward (a notification clicked, the app opened again). From inside: `open`
         // on the app sends it a reopen, and Chrome answers a reopen with a new-tab window.
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -311,6 +317,33 @@ static void takeReopen(void) {
   dbg(@"reopen taken from %@", NSStringFromClass(c));
 }
 
+// Quit (⌘Q, the Dock menu's Quit, a quit Apple event) reaches the delegate's applicationShouldTerminate:. Chrome then
+// closes its windows, but its process stays up (it was started for a debugging pipe, with no startup window), so the
+// Go side saw only "no window left" — with KeepRunning, the app stayed in the Dock with nothing to show. Ours tells the
+// Go side to quit instead (it closes the browser over CDP). The Go side says "quitting" when it closes the browser
+// itself, and with no Go side at all Chrome's own answer goes through: Chrome's shutdown path may come back here.
+static IMP chromeShouldTerminate;
+static NSApplicationTerminateReply ourShouldTerminate(id self, SEL _cmd, NSApplication *app) {
+  if (sock >= 0 && !shellQuitting) {
+    shellQuitting = YES; // a second Quit before the Go side closes the browser goes to Chrome
+    dbg(@"quit: asking the shell");
+    sendLine(@"action quit");
+    return NSTerminateCancel;
+  }
+  if (chromeShouldTerminate) return ((NSApplicationTerminateReply(*)(id, SEL, NSApplication *))chromeShouldTerminate)(self, _cmd, app);
+  return NSTerminateNow;
+}
+
+static void takeTerminate(void) {
+  Class c = [NSApp.delegate class];
+  if (!c) return;
+  SEL sel = @selector(applicationShouldTerminate:);
+  Method m = class_getInstanceMethod(c, sel);
+  if (m) chromeShouldTerminate = method_setImplementation(m, (IMP)ourShouldTerminate);
+  else class_addMethod(c, sel, (IMP)ourShouldTerminate, "Q@:@");
+  dbg(@"terminate taken from %@", NSStringFromClass(c));
+}
+
 static void takeDockMenu(void) {
   Class c = [NSApp.delegate class];
   if (!c) return;
@@ -338,6 +371,7 @@ __attribute__((constructor)) static void start(void) {
                                                   dbg(@"did finish launching");
                                                   takeDockMenu();
                                                   takeReopen();
+                                                  takeTerminate();
                                                   connectShell(path);
                                                   // Chrome may set its menu again later (a locale or profile change):
                                                   // put ours back.
