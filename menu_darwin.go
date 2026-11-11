@@ -62,6 +62,8 @@ func (mm *macMenu) read(c net.Conn) {
 			if f != nil {
 				go f(mm.m.focusedWindow())
 			}
+		case "url": // a link of the app's schemes, sent to the engine while running (menu.m's getURL)
+			go mm.m.app.openURLs([]string{arg})
 		case "action":
 			switch arg {
 			case "reopen": // a click on the Dock icon

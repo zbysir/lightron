@@ -24,6 +24,10 @@ package (`lightron init` writes one):
 | `out` | Output directory. Default `dist`. |
 | `publisher` | Shown in Windows' Installed apps and the exe's properties. |
 | `targets` | What `lightron build` builds without `--target`. |
+| `exe` | The executable's name, without `.exe`. Default: the name, lowercased, spaces as dashes. |
+| `files` | More files to ship, destination → source (`{os}` / `{arch}` in a source): `.app/Contents/Resources` on macOS, next to the `.exe` on Windows. |
+| `nsis_include` | An NSIS script for the Windows installer; its macro `preInstall` runs before the files are copied. |
+| `protocols` | URL schemes the Windows installer registers (and the uninstaller removes); see `Options.Protocols`. |
 
 The version is also passed to your program as `-X main.version=<version>`: declare `var version = "0.0.0-dev"` in
 `package main` and pass it to `Options.Version` and the `update` package.

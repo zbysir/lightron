@@ -88,7 +88,8 @@ lightron.getPathForFile(file)          // a dropped / pasted / picked File's pat
 lightron.platform                      // "darwin" | "windows"
 ```
 
-Links to other sites (`<a href>` and `window.open`) open in the default browser. A window can also navigate to another
+Links to other sites (`<a href>` and `window.open`) open in the default browser; links to the app's other origins
+(`Options.Origins`) that ask for a new window open one of the app's. A window can also navigate to another
 site (an app that shows a web app, say): `window.lightron` and `Bind` are only ever on the app's own origins. Notifications and the clipboard are
 allowed without asking.
 
@@ -110,6 +111,8 @@ lightron.Run(lightron.Options{
 	Origins  []string               // more origins that are the app's ("http://*.localhost:7000")
 	BrowserArgs []string            // extra engine switches
 	UserAgentSuffix string          // " MyApp/1.2" after the browser's User-Agent
+	Protocols []string              // URL schemes ("notes" for notes://…), to OnURL
+	OnURL     func(*lightron.App, string)
 	OnMessage, OnReady, OnSecondInstance …
 	KeepRunning bool                // stay in the Dock with no window
 })
@@ -118,7 +121,8 @@ lightron.Run(lightron.Options{
 `OnReady` hands you the `*App`: `NewWindow(path)`, `Emit(event, data)`, `SetBadge("3")`, `SetMenu(menu)`, `Quit()`,
 and per window `Eval`, `Emit`, `Focus`, `Close`. For what Lightron has no API for, `App.Call` and `Window.Call` send
 DevTools protocol commands. Only one instance runs; opening it again brings a window up.
-See [pkg.go.dev](https://pkg.go.dev/github.com/zbysir/lightron) and [examples/](examples).
+Every option, method and platform difference: [docs/api.md](docs/api.md). Also
+[pkg.go.dev](https://pkg.go.dev/github.com/zbysir/lightron) and [examples/](examples).
 
 **Updates**: the [`update`](update) package checks a feed (`lightron feed` writes it; a GitHub release works as the
 host), downloads the new package, and installs it once the app quits. See [docs/updates.md](docs/updates.md).

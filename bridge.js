@@ -85,31 +85,46 @@
   // Without this they'd open in the app's browser, in a window the app doesn't own. Not in iframes on Windows: WebView2
   // delivers messages from the top page only, so the link would be swallowed (the page's own handling, if any, runs).
   const ownLinks = window.top === window || platform !== "windows";
-  const external = (href) => {
+  // The app's own origins (Options.Origins; pageScripts defines the list): a link to another of them is a window of the
+  // app's, not the browser's.
+  const origins = typeof __lightronOrigins !== "undefined" ? __lightronOrigins : [location.origin];
+  const appOrigin = (o) =>
+    origins.some((p) => {
+      if (p === o) return true;
+      const i = p.indexOf("://*.");
+      return i >= 0 && o.startsWith(p.slice(0, i + 3)) && o.endsWith(p.slice(i + 4)) && o.length > p.length - 1;
+    });
+  // "open": to the default browser; "window": a new window of the app's; "": the browser does it as usual.
+  const where = (href, newWindow) => {
     try {
       const u = new URL(href, location.href);
-      return /^(https?|mailto):$/.test(u.protocol) && u.origin !== location.origin ? u.href : "";
+      if (!/^(https?|mailto):$/.test(u.protocol) || u.origin === location.origin) return ["", ""];
+      if (u.protocol !== "mailto:" && appOrigin(u.origin)) return [newWindow ? "window" : "", u.href];
+      return ["open", u.href];
     } catch {
-      return "";
+      return ["", ""];
     }
   };
   const open = window.open;
-  window.open = function (u, ...rest) {
-    const x = ownLinks && u && external(String(u));
-    if (x) {
-      post({ t: "open", url: x });
-      return null;
+  window.open = function (u, target, ...rest) {
+    if (ownLinks && u) {
+      const [t, url] = where(String(u), !/^_(self|parent|top)$/.test(target || ""));
+      if (t) {
+        post({ t, url });
+        return null;
+      }
     }
-    return open.call(this, u, ...rest);
+    return open.call(this, u, target, ...rest);
   };
   // Bubble phase, on window: after the page's own handlers (one that opened the link itself has called preventDefault).
   addEventListener("click", (e) => {
     if (!ownLinks || e.defaultPrevented || e.button > 1) return;
     const a = e.composedPath().find((n) => n instanceof HTMLAnchorElement && n.href);
-    const x = a && external(a.href);
-    if (!x) return;
+    if (!a) return;
+    const [t, url] = where(a.href, e.button === 1 || e.metaKey || e.ctrlKey || e.shiftKey || /^_(blank|new)$/.test(a.target));
+    if (!t) return;
     e.preventDefault();
-    post({ t: "open", url: x });
+    post({ t, url });
   });
 
   // ---- right-click ----

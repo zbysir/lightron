@@ -5,18 +5,24 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 // One instance per data directory (two would fight over the browser profile): the first listens on a unix socket
-// there (Windows 10 and later have them too), a second one says so on it and leaves. The first then runs
-// OnSecondInstance (default: bring a window up).
+// there (Windows 10 and later have them too), a second one says so on it ("second", then a line "url <link>" per link
+// it was started with) and leaves. The first then runs OnURL with the links, or OnSecondInstance (default: bring a
+// window up).
 
 // claimInstance: listening = we are the one; nil and true = another runs and was told.
-func claimInstance(dir string, onSecond func()) (ln net.Listener, other bool) {
+func claimInstance(dir string, urls []string, onSecond func(urls []string)) (ln net.Listener, other bool) {
 	sock := filepath.Join(dir, "instance.sock")
 	if c, err := net.DialTimeout("unix", sock, time.Second); err == nil {
-		_, _ = c.Write([]byte("second\n"))
+		msg := "second\n"
+		for _, u := range urls {
+			msg += "url " + u + "\n"
+		}
+		_, _ = c.Write([]byte(msg))
 		c.Close()
 		return nil, true
 	}
@@ -31,10 +37,20 @@ func claimInstance(dir string, onSecond func()) (ln net.Listener, other bool) {
 			if err != nil {
 				return
 			}
-			line, _ := bufio.NewReader(c).ReadString('\n')
+			_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			sc := bufio.NewScanner(c)
+			second, urls := false, []string(nil)
+			for sc.Scan() {
+				line := sc.Text()
+				if line == "second" {
+					second = true
+				} else if u, ok := strings.CutPrefix(line, "url "); ok {
+					urls = append(urls, u)
+				}
+			}
 			c.Close()
-			if line == "second\n" {
-				go onSecond()
+			if second {
+				go onSecond(urls)
 			}
 		}
 	}()

@@ -7,10 +7,17 @@
 // goes back as a line ("click <n>", "action <name>") and runs there. Items whose behaviour is the browser's (Edit's
 // copy / paste…, zoom, full screen, developer tools) are copies of the browser's own items, so they keep working.
 //
+// Links of the app's schemes (Options.Protocols) come here too: the engine copy is their handler (internal/macengine),
+// so LaunchServices sends them to this process as Apple events. Running, they go to the Go side ("url <link>");
+// started by LaunchServices for one (the app isn't running), this library stops the browser from starting at all and
+// starts the shell with the link instead (coldStart).
+//
 // Built universal (arm64 + x86_64) by `make menulib` into lightronmenu.dylib, which is checked in and embedded, so
 // building an app needs no C compiler.
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
+#include <dlfcn.h>
+#include <spawn.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -36,6 +43,98 @@ static void sendLine(NSString *line) {
   if (sock < 0) return;
   NSData *d = [[line stringByAppendingString:@"\n"] dataUsingEncoding:NSUTF8StringEncoding];
   (void)write(sock, d.bytes, d.length);
+}
+
+// ---- links of the app's schemes ----
+extern char **environ;
+static NSMutableArray<NSString *> *pendingURLs; // came before the Go side connected
+static NSMutableArray<NSString *> *coldURLs;    // coldStart: what LaunchServices started us for
+static NSArray<NSString *> *schemes;            // $LIGHTRON_SCHEMES: this copy is made their default handler
+
+static void stopCold(void) {
+  [NSApp stop:nil];
+  // stop: takes effect after the next event: post one
+  [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0
+                                     timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0]
+           atStart:YES];
+}
+
+@interface LightronURLHandler : NSObject
+@end
+@implementation LightronURLHandler
+- (void)getURL:(NSAppleEventDescriptor *)event withReply:(NSAppleEventDescriptor *)reply {
+  NSString *u = [[event paramDescriptorForKeyword:keyDirectObject] stringValue];
+  u = [[u componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet] componentsJoinedByString:@""];
+  if (!u.length) return;
+  dbg(@"url %@", u);
+  if (coldURLs) {
+    [coldURLs addObject:u];
+    stopCold();
+  } else if (sock >= 0) {
+    sendLine([@"url " stringByAppendingString:u]);
+  } else {
+    [pendingURLs addObject:u];
+  }
+}
+@end
+
+static id urlHandler;
+// takeURLs: links come to us, not to Chrome (which would open them as a tab, or hand them back to macOS).
+static void takeURLs(void) {
+  if (!urlHandler) urlHandler = [LightronURLHandler new];
+  [[NSAppleEventManager sharedAppleEventManager] setEventHandler:urlHandler
+                                                     andSelector:@selector(getURL:withReply:)
+                                                   forEventClass:kInternetEventClass
+                                                      andEventID:kAEGetURL];
+}
+
+static void sendPendingURLs(void) {
+  for (NSString *u in pendingURLs) sendLine([@"url " stringByAppendingString:u]);
+  [pendingURLs removeAllObjects];
+}
+
+// claimSchemes: this copy is the default handler of the app's schemes (the app's .app doesn't claim them; an older
+// install of the app, another copy of the browser, may have).
+static void claimSchemes(void) {
+  NSString *bid = NSBundle.mainBundle.bundleIdentifier;
+  if (!bid) return;
+  for (NSString *s in schemes) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    OSStatus st = LSSetDefaultHandlerForURLScheme((__bridge CFStringRef)s, (__bridge CFStringRef)bid);
+#pragma clang diagnostic pop
+    dbg(@"default handler of %@: %d", s, (int)st);
+  }
+}
+
+// coldStart: LaunchServices started the engine for a link (LIGHTRON_COLD in its LSEnvironment) while the app wasn't
+// running. Before the browser starts (we are in a library initializer: its main hasn't run), take the link, start the
+// shell with it as an argument (the shell starts the engine its own way), and leave. Without a link in 3 s (the
+// engine opened by hand), the shell is started anyway.
+static void coldStart(void) {
+  coldURLs = [NSMutableArray new];
+  [NSApplication sharedApplication];
+  [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+  takeURLs();
+  [NSTimer scheduledTimerWithTimeInterval:3 repeats:NO block:^(NSTimer *t) { stopCold(); }];
+  [NSApp run];
+  NSString *shell = nil;
+  Dl_info info;
+  if (dladdr((const void *)coldStart, &info) && info.dli_fname) {
+    NSString *dir = [[NSString stringWithUTF8String:info.dli_fname] stringByDeletingLastPathComponent];
+    shell = [[NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"shell"] encoding:NSUTF8StringEncoding error:nil]
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  }
+  dbg(@"cold start: shell %@, links %@", shell, coldURLs);
+  if (shell.length) {
+    unsetenv("__CFBundleIdentifier"); // LaunchServices' note that we are the engine: not the shell's
+    char **argv = calloc(coldURLs.count + 2, sizeof(char *));
+    argv[0] = (char *)shell.fileSystemRepresentation;
+    for (NSUInteger i = 0; i < coldURLs.count; i++) argv[i + 1] = (char *)coldURLs[i].UTF8String;
+    pid_t pid;
+    posix_spawn(&pid, argv[0], NULL, NULL, argv, environ);
+  }
+  _exit(0);
 }
 
 @interface LightronMenuTarget : NSObject
@@ -283,6 +382,9 @@ static void connectShell(NSString *path) {
       if (connect(fd, (struct sockaddr *)&a, sizeof a) == 0) {
         dbg(@"connected");
         sock = fd;
+        dispatch_async(dispatch_get_main_queue(), ^{
+          sendPendingURLs();
+        });
         break;
       }
       close(fd);
@@ -356,15 +458,24 @@ static void takeDockMenu(void) {
 
 __attribute__((constructor)) static void start(void) {
   const char *p = getenv("LIGHTRON_MENU_SOCK");
+  BOOL cold = getenv("LIGHTRON_COLD") != NULL; // from the copy's LSEnvironment: started by LaunchServices
+  const char *sch = getenv("LIGHTRON_SCHEMES");
   // Not for the processes Chrome starts: its helpers are Google-signed with library validation, and would be killed
   // for loading this ad hoc signed library.
   unsetenv("DYLD_INSERT_LIBRARIES");
-  if (!p) return;
-  NSString *path = [NSString stringWithUTF8String:p];
+  unsetenv("LIGHTRON_COLD");
+  unsetenv("LIGHTRON_SCHEMES");
   if (getenv("LIGHTRON_MENU_LOG")) dbgf = fopen(getenv("LIGHTRON_MENU_LOG"), "a");
   unsetenv("LIGHTRON_MENU_LOG");
+  if (!p) {
+    if (cold) coldStart();
+    return;
+  }
+  NSString *path = [NSString stringWithUTF8String:p];
   dbg(@"loaded");
   unsetenv("LIGHTRON_MENU_SOCK");
+  pendingURLs = [NSMutableArray new];
+  if (sch && *sch) schemes = [[NSString stringWithUTF8String:sch] componentsSeparatedByString:@","];
   target = [LightronMenuTarget new];
   [[NSNotificationCenter defaultCenter] addObserverForName:NSApplicationDidFinishLaunchingNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *n) {
@@ -372,6 +483,15 @@ __attribute__((constructor)) static void start(void) {
                                                   takeDockMenu();
                                                   takeReopen();
                                                   takeTerminate();
+                                                  if (schemes.count) {
+                                                    takeURLs();
+                                                    claimSchemes();
+                                                    // Chrome may set its own handler later: take it back once more
+                                                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+                                                                   dispatch_get_main_queue(), ^{
+                                                                     takeURLs();
+                                                                   });
+                                                  }
                                                   connectShell(path);
                                                   // Chrome may set its menu again later (a locale or profile change):
                                                   // put ours back.

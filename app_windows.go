@@ -60,13 +60,7 @@ func (a *App) run() error {
 	}
 	e := &win{app: a}
 	a.eng = e
-	ln, other := claimInstance(dir, func() {
-		if a.opts.OnSecondInstance != nil {
-			a.opts.OnSecondInstance(a)
-		} else {
-			a.FocusOrOpen()
-		}
-	})
+	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second)
 	if other {
 		return nil
 	}
@@ -176,6 +170,10 @@ func (a *App) run() error {
 			w.Terminate()
 		})
 	}()
+	if len(a.opts.Protocols) > 0 {
+		go registerProtocols(a.opts.Name, a.opts.Protocols)
+	}
+	go a.openURLs(a.urlsIn(os.Args[1:])) // started by a link
 	if a.opts.OnReady != nil {
 		go a.opts.OnReady(a)
 	}
@@ -245,6 +243,8 @@ func (e *win) newWindow(string) error {
 	}
 	return nil
 }
+
+func (e *win) ownOrigin() string { return e.origin }
 
 func (e *win) eval(_ *Window, js string) error {
 	e.wv.Dispatch(func() { e.wv.Eval(js) })

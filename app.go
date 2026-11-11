@@ -29,6 +29,7 @@ type engine interface {
 	setBadge(label string)
 	call(w *Window, method string, params any) (json.RawMessage, error)
 	setMenu()
+	ownOrigin() string // where the app's pages start (Options.Origins are on top of it)
 }
 
 // Window is one window of the app.
@@ -67,7 +68,8 @@ func (w *Window) Call(method string, params any) (json.RawMessage, error) {
 // Close closes the window.
 func (w *Window) Close() { w.app.eng.close(w) }
 
-// NewWindow opens a window on path ("" = the page's root). Not on Windows yet.
+// NewWindow opens a window on path ("" = the page's root), or on a full http(s) URL (any page, e.g. one of
+// Options.Origins). Not on Windows yet: it returns an error there while the window is open.
 func (a *App) NewWindow(path string) error { return a.eng.newWindow(path) }
 
 // Windows are the open windows.
@@ -189,6 +191,19 @@ func (a *App) message(w *Window, payload string) {
 		}
 	case "open":
 		go openExternal(m.URL)
+	case "window":
+		// window.open / a target=_blank link to another of the app's origins (bridge.js): a window of the app's, not the
+		// default browser. Where there is only one window (Windows), the window goes there instead.
+		u, err := url.Parse(m.URL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || !appOrigin(u.Scheme+"://"+u.Host, a.eng.ownOrigin(), a.opts.Origins) {
+			return
+		}
+		go func() {
+			if err := a.NewWindow(u.String()); err != nil {
+				b, _ := json.Marshal(u.String())
+				_ = w.Eval("location.href = " + string(b))
+			}
+		}()
 	case "focus":
 		go w.Focus()
 	}

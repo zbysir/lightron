@@ -86,6 +86,16 @@ type Options struct {
 	// window up, or open one.
 	OnSecondInstance func(a *App)
 
+	// Protocols are URL schemes the app opens ("notes" for notes://…): a link of one, clicked in a browser or another
+	// app, starts the app if needed and goes to OnURL. macOS: the engine claims them (its Info.plist, made default
+	// handler) when the app first runs; Windows: registered for the current user at each start (and by the installer
+	// when lightron.json lists them).
+	Protocols []string
+	// OnURL receives each link of Protocols the app is opened with: at start (it may come before the first window has
+	// loaded), or while running (instead of OnSecondInstance). The link is as it came: check it before acting on it,
+	// any web page can send one.
+	OnURL func(a *App, url string)
+
 	// KeepRunning keeps the app running when its last window closes (macOS: the Dock icon reopens one). Default:
 	// quit.
 	KeepRunning bool

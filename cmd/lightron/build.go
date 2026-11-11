@@ -248,6 +248,7 @@ func buildWindows(c *Config, arch string, icon image.Image, ldflags string) ([]s
 			Name: c.Name, Version: c.Version, Publisher: c.Publisher, Exe: exe,
 			Files: files, Dirs: dirs, Include: c.NSISInclude,
 			Out: setup, Icon: setupIcon, ShortcutIcon: "icon.ico", RegKey: c.slug(),
+			Protocols: c.Protocols,
 		})
 		if err != nil {
 			return nil, err

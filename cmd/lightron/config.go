@@ -37,6 +37,10 @@ type Config struct {
 	// NSISInclude is an NSIS script for the Windows installer: !include'd, and its macro preInstall (if it defines
 	// one) runs before the files are copied, e.g. to remove what an earlier installer left.
 	NSISInclude string `json:"nsis_include,omitempty"`
+	// Protocols are the app's URL schemes (Options.Protocols): the Windows installer registers them, so a link works
+	// before the app's first start, and the uninstaller removes them. macOS: nothing in the .app (the engine copy claims
+	// them when the app runs).
+	Protocols []string `json:"protocols,omitempty"`
 
 	// dir is lightron.json's directory (absolute): Main is built from there.
 	dir string

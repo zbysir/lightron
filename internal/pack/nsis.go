@@ -27,11 +27,12 @@ type NSIS struct {
 	Exe                      string   // the app's .exe, installed as is
 	Files                    []string // absolute paths of the files to install next to the exe (the exe included)
 	Dirs                     []NSISDir
-	Include                  string // an NSIS script to !include; its macro preInstall runs before the files are copied
-	Out                      string // the installer's path
-	Icon                     string // a bitmap .ico for the installer itself
-	ShortcutIcon             string // the .ico installed for shortcuts (one of Files' names), "" = the exe's
-	RegKey                   string // the uninstall registry key's name
+	Include                  string   // an NSIS script to !include; its macro preInstall runs before the files are copied
+	Out                      string   // the installer's path
+	Icon                     string   // a bitmap .ico for the installer itself
+	ShortcutIcon             string   // the .ico installed for shortcuts (one of Files' names), "" = the exe's
+	RegKey                   string   // the uninstall registry key's name
+	Protocols                []string // URL schemes: registered for the current user (the app also does at each start)
 }
 
 const nsisTemplate = `Unicode true
@@ -75,7 +76,11 @@ Section
   WriteRegStr HKCU "${KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegDWORD HKCU "${KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${KEY}" "NoRepair" 1
-SectionEnd
+{{range .Protocols}}  WriteRegStr HKCU "Software\Classes\{{.}}" "" "URL:{{$.Name}}"
+  WriteRegStr HKCU "Software\Classes\{{.}}" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\{{.}}\DefaultIcon" "" '"$INSTDIR\{{$.Exe}}",0'
+  WriteRegStr HKCU "Software\Classes\{{.}}\shell\open\command" "" '"$INSTDIR\{{$.Exe}}" "%1"'
+{{end}}SectionEnd
 
 Function .onInstSuccess
   Exec '"$INSTDIR\{{.Exe}}"'
@@ -86,5 +91,6 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\{{.Name}}.lnk"
   Delete "$DESKTOP\{{.Name}}.lnk"
   DeleteRegKey HKCU "${KEY}"
-SectionEnd
+{{range .Protocols}}  DeleteRegKey HKCU "Software\Classes\{{.}}"
+{{end}}SectionEnd
 `

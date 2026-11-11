@@ -72,6 +72,9 @@ func (s *server) close() { _ = s.ln.Close() }
 
 // pageURL: where a window on path opens, given the app's entry (a login link of ours, or Options.URL).
 func pageURL(entry, path string) string {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return path
+	}
 	u, err := url.Parse(entry)
 	if err != nil {
 		return entry

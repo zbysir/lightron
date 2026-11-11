@@ -27,6 +27,7 @@ package macengine
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -40,6 +41,13 @@ import (
 type Brand struct {
 	Name string // Dock, ⌘Tab, menu bar, notifications
 	ID   string // CFBundleIdentifier: its own, so its notification permission and Dock place aren't the browser's
+	// Schemes replace the browser's URL types (http, https, file…): the copy is the handler of the app's own schemes
+	// only. LaunchServices then sends their links to the copy: running, the menu library takes them; not running, it
+	// is started by LaunchServices itself, with Env.
+	Schemes []string
+	// Env is the copy's LSEnvironment (with the browser's own): what a launch by LaunchServices (a link, not the
+	// shell) gets, e.g. the menu library to load.
+	Env  map[string]string
 	ICNS []byte // the icon; nil = keep the browser's
 }
 
@@ -83,7 +91,11 @@ func Prepare(exe, dir string, b Brand, logf func(string, ...any)) (string, error
 	dst := filepath.Join(slot, b.Name+".app")
 	out := filepath.Join(dst, "Contents/MacOS", bin)
 	sum := sha256.Sum256(b.ICNS)
+	extra, _ := json.Marshal([]any{b.Schemes, b.Env})
 	stamp := layout + "\n" + b.Name + "\n" + b.ID + "\n" + hex.EncodeToString(sum[:8])
+	if len(b.Schemes) > 0 || len(b.Env) > 0 {
+		stamp += "\n" + string(extra)
+	}
 	if got, err := os.ReadFile(filepath.Join(dst, ".lightron")); err == nil && string(got) == stamp {
 		return out, nil
 	}
@@ -110,6 +122,21 @@ func Prepare(exe, dir string, b Brand, logf func(string, ...any)) (string, error
 		{"plutil", "-replace", "CFBundleName", "-string", b.Name, plist},
 		{"plutil", "-replace", "CFBundleDisplayName", "-string", b.Name, plist},
 		{"plutil", "-replace", "CFBundleIdentifier", "-string", b.ID, plist},
+	}
+	if len(b.Schemes) > 0 {
+		types, _ := json.Marshal([]map[string]any{{"CFBundleURLName": b.ID, "CFBundleURLSchemes": b.Schemes}})
+		steps = append(steps, []string{"plutil", "-replace", "CFBundleURLTypes", "-json", string(types), plist})
+	}
+	if len(b.Env) > 0 {
+		env := map[string]string{}
+		if o, err := exec.Command("plutil", "-extract", "LSEnvironment", "json", "-o", "-", plist).Output(); err == nil {
+			_ = json.Unmarshal(o, &env)
+		}
+		for k, v := range b.Env {
+			env[k] = v
+		}
+		e, _ := json.Marshal(env)
+		steps = append(steps, []string{"plutil", "-replace", "LSEnvironment", "-json", string(e), plist})
 	}
 	if len(b.ICNS) > 0 {
 		icon, err := plistString(plist, "CFBundleIconFile")

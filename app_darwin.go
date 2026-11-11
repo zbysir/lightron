@@ -3,6 +3,7 @@ package lightron
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -62,14 +63,7 @@ func (a *App) run() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	onSecond := func() {
-		if a.opts.OnSecondInstance != nil {
-			a.opts.OnSecondInstance(a)
-		} else {
-			a.FocusOrOpen()
-		}
-	}
-	ln, other := claimInstance(dir, onSecond)
+	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second)
 	if other {
 		return nil
 	}
@@ -108,7 +102,22 @@ func (a *App) run() error {
 		}
 		icns = pack.ICNS(img)
 	}
-	if e, err := macengine.Prepare(browser, filepath.Join(dir, "engine"), macengine.Brand{Name: a.opts.Name, ID: a.opts.ID + ".engine", ICNS: icns}, a.opts.Logf); err != nil {
+	lib, libErr := macmenu.Path(dir)
+	brand := macengine.Brand{Name: a.opts.Name, ID: a.opts.ID + ".engine", ICNS: icns}
+	if len(a.opts.Protocols) > 0 && libErr == nil {
+		// Links of the app's schemes go to the engine (it is what runs). Started by one while the app isn't running,
+		// the engine loads the menu library, which hands the link to the shell instead (menu.m's coldStart): the
+		// shell's path is in <dir>/shell, written at each start (the app may have moved, been updated).
+		brand.Schemes = a.opts.Protocols
+		brand.Env = map[string]string{"DYLD_INSERT_LIBRARIES": lib, "LIGHTRON_COLD": "1"}
+		if os.Getenv("LIGHTRON_DEBUG") != "" {
+			brand.Env["LIGHTRON_MENU_LOG"] = filepath.Join(dir, "menu.log")
+		}
+		if self, err := os.Executable(); err == nil {
+			_ = os.WriteFile(filepath.Join(dir, "shell"), []byte(self), 0o644)
+		}
+	}
+	if e, err := macengine.Prepare(browser, filepath.Join(dir, "engine"), brand, a.opts.Logf); err != nil {
 		a.logf("engine: %v; running the browser as installed (its name shows in the Dock)", err)
 	} else {
 		exe = e
@@ -118,13 +127,16 @@ func (a *App) run() error {
 	a.eng = m
 	var env []string
 	if exe != browser { // the menu library loads only into the re-signed copy
-		if lib, err := macmenu.Path(dir); err != nil {
-			a.logf("menu: %v", err)
+		if libErr != nil {
+			a.logf("menu: %v", libErr)
 		} else if mm, err := newMacMenu(m, filepath.Join(dir, "menu.sock")); err != nil {
 			a.logf("menu: %v", err)
 		} else {
 			m.menu = mm
 			env = []string{"DYLD_INSERT_LIBRARIES=" + lib, "LIGHTRON_MENU_SOCK=" + mm.sock}
+			if len(a.opts.Protocols) > 0 {
+				env = append(env, "LIGHTRON_SCHEMES="+strings.Join(a.opts.Protocols, ","))
+			}
 			if os.Getenv("LIGHTRON_DEBUG") != "" {
 				env = append(env, "LIGHTRON_MENU_LOG="+filepath.Join(dir, "menu.log"))
 			}
@@ -158,6 +170,7 @@ func (a *App) run() error {
 	if err := m.newWindow(a.opts.Window.Path); err != nil {
 		return err
 	}
+	go a.openURLs(a.urlsIn(os.Args[1:])) // started by a link (Windows; macOS: the engine started the app for one)
 	if a.opts.OnReady != nil {
 		go a.opts.OnReady(a)
 	}
@@ -475,8 +488,14 @@ func newTabPage(u string) bool {
 }
 
 func (m *mac) ours(u string) bool {
-	return u == "" || u == "about:blank" || strings.HasPrefix(u, m.origin+"/")
+	if u == "" || u == "about:blank" || strings.HasPrefix(u, m.origin+"/") {
+		return true
+	}
+	p, err := url.Parse(u)
+	return err == nil && appOrigin(p.Scheme+"://"+p.Host, m.origin, m.app.opts.Origins)
 }
+
+func (m *mac) ownOrigin() string { return m.origin }
 
 // popup: a window the page opened past the bridge's window.open (noopener…): once it knows where it goes, an
 // outside address goes to the default browser instead.

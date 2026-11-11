@@ -3,6 +3,27 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [Unreleased]
+
+### Added
+
+- URL schemes: `Options.Protocols` and `OnURL`. A link of one (`notes://…`) clicked anywhere starts the app if needed
+  and reaches `OnURL`. macOS: the engine copy claims the schemes and is made their default handler; started by a link
+  while the app isn't running, it starts the app with the link instead of running the browser. Windows: registered
+  for the current user at each start, and by the installer with `lightron.json`'s new `protocols`. A second instance
+  now hands its links over to the first.
+- Links to another of the app's origins (`Options.Origins`) that ask for a new window (`window.open(url)`,
+  `target="_blank"`, ⌘/Ctrl-click) open a window of the app's (macOS); on Windows, with its one window, the window goes
+  there. They used to open in the default browser, as another site. A plain click navigates the window, as before.
+- `App.NewWindow` takes a full `http(s)` URL too, not only a path on the start origin.
+- docs/api.md: the whole API in one reference (options, `App`, `Window`, menus, the page's side, links and windows,
+  `lightron.json`, the command, the `update` package, platform differences).
+
+### Fixed
+
+- macOS: a popup the page opened past the bridge on another of the app's origins was closed and sent to the default
+  browser.
+
 ## [0.4.7] - 2026-11-11
 
 ### Fixed

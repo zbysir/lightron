@@ -12,7 +12,7 @@ import (
 func pageScripts(origin string, opts Options) string {
 	o, _ := json.Marshal(append([]string{origin}, opts.Origins...))
 	return "if (" + string(o) + ".some((p) => p === location.origin || p.includes('://*.') && location.origin.endsWith(p.slice(p.indexOf('*.') + 1)) && location.origin.startsWith(p.slice(0, p.indexOf('*.'))))) {\n" +
-		bridgeJS + "\n" + opts.Script + "\n}\n" + opts.PageScript
+		"const __lightronOrigins = " + string(o) + ";\n" + bridgeJS + "\n" + opts.Script + "\n}\n" + opts.PageScript
 }
 
 // externalOpen: a bridge message asking to open an http(s) address in the default browser
