@@ -39,6 +39,10 @@ type Options struct {
 	// Handler serves the pages instead: Lightron runs it on a private loopback port that only the app's windows can
 	// use (a secret cookie, set on the first load).
 	Handler http.Handler
+	// Splash is a page (HTML) the first window shows while URLFunc runs, so the app answers at once while its backend
+	// starts; the window then goes to the app's pages. A plain page: no bridge, nothing it loads from elsewhere is
+	// guaranteed (inline its styles). Only with Host "-" (otherwise ignored: URLFunc runs first, as without).
+	Splash string
 	// Host is the name pages are shown at (http://<Host>/), when the page is http on this machine. The browser writes
 	// the page's origin under every web notification ("notes" reads better there than "127.0.0.1:53817"), and keeps
 	// the page's storage (localStorage, IndexedDB) by origin: a fixed name keeps it when the port changes. Default:

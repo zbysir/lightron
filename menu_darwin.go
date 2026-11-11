@@ -67,7 +67,7 @@ func (mm *macMenu) read(c net.Conn) {
 		case "action":
 			switch arg {
 			case "reopen": // a click on the Dock icon
-				go mm.m.app.FocusOrOpen()
+				go mm.m.reopen()
 			case "quit": // the Quit item (⌘Q), and the Dock menu's Quit / a quit Apple event (menu.m's ourShouldTerminate)
 				mm.m.app.Quit()
 			case "reload":

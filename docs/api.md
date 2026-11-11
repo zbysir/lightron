@@ -45,6 +45,7 @@ the first one (see `OnSecondInstance`).
 | `URL` | `string` | A page served by something else (a backend your app starts, a dev server). An `http` URL on this machine is shown at `http://<Host>/` (see `Host`); `https` and remote URLs are shown as they are. |
 | `URLFunc` | `func() (string, error)` | Returns `URL` instead, called once Lightron knows this is the only instance: start your backend here, return its address. An error ends `Run` with it. |
 | `Handler` | `http.Handler` | Lightron serves the pages itself, on a private loopback port only the app's windows can use (a secret cookie set on the first load). |
+| `Splash` | `string` | A page (HTML) the first window shows at once while `URLFunc` runs (a backend starting), before going to the app's pages; the engine starts meanwhile. A plain page: no bridge; inline what it needs. Only with `Host: "-"` (a page host needs the port when the engine starts); otherwise ignored. |
 | `Host` | `string` | The host name pages are shown at when the page is `http` on this machine. The browser keeps storage (localStorage, IndexedDB) by origin and writes the origin under web notifications, so a fixed name keeps both when the port changes. Default: the last part of `ID`, lowercased. `"-"`: pages stay at their real address (a backend that checks the `Host` header). |
 | `Window` | `WindowOptions` | The first window: `Path` (relative to the page's root, default `/`), `Width`, `Height` (default 1200 × 800). |
 

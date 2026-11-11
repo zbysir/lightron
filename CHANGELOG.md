@@ -7,6 +7,8 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
 
 ### Added
 
+- `Options.Splash`: with `URLFunc` (and `Host: "-"`), the first window opens at once and shows this page while
+  `URLFunc` runs, then goes to the app's pages; the engine starts meanwhile instead of after.
 - URL schemes: `Options.Protocols` and `OnURL`. A link of one (`notes://…`) clicked anywhere starts the app if needed
   and reaches `OnURL`. macOS: the engine copy claims the schemes and is made their default handler; started by a link
   while the app isn't running, it starts the app with the link instead of running the browser. Windows: registered
@@ -27,6 +29,9 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
   LaunchServices doesn't know, so every open starts it again and it hands over to the running one.
 - macOS: opening the app again while it runs didn't bring its window forward (macOS 14 lets only the app in front hand
   activation over): the instance the person started asks LaunchServices to open the engine, which activates it.
+- macOS: after the last window closed, the Dock icon stayed while the browser shut down (seconds, on a well-used
+  profile), and clicking it opened a window again (several, clicking fast). The engine leaves the Dock at once, and
+  no window opens once the app is quitting; clicks on the Dock icon while a window is still opening don't open more.
 - macOS: a popup the page opened past the bridge on another of the app's origins was closed and sent to the default
   browser.
 

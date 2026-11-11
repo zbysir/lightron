@@ -344,6 +344,11 @@ static void readLoop(void) {
       NSString *text = [[NSString alloc] initWithData:line encoding:NSUTF8StringEncoding];
       if ([text isEqualToString:@"quitting"]) { // the Go side is closing the browser: let Quit through (ourShouldTerminate)
         shellQuitting = YES;
+        // Out of the Dock and ⌘Tab now: Chrome's shutdown (saving its state) can take seconds, and an icon still there
+        // looks like the app didn't quit (a click on it would only ask for a window that isn't coming)
+        dispatch_async(dispatch_get_main_queue(), ^{
+          [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        });
         continue;
       }
       if ([text isEqualToString:@"activate"]) {

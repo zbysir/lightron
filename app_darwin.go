@@ -2,6 +2,7 @@ package lightron
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -33,8 +34,12 @@ type mac struct {
 	c       *cdp.Conn
 	exe     string // the engine's executable: new windows are asked of it (newWindow)
 	profile string
-	entry   string // the pages' entry, at the page host (http://<Host>/…)
+	// entry: the pages' entry, at the page host (http://<Host>/…); origin: its origin. Both "" while a splash shows
+	// (Options.Splash: URLFunc still running), set once (setEntry). Read with pages()
+	entry   string
 	origin  string
+	scripts map[string]string // a window's session → its page scripts' identifier (replaced by setEntry)
+	splash  string            // the splash page's address while URLFunc runs (Options.Splash)
 	menu    *macMenu
 	ua      string // the User-Agent with Options.UserAgentSuffix ("": none)
 
@@ -79,7 +84,15 @@ func (a *App) run() error {
 	}
 
 	entry := a.opts.URL
-	if a.opts.URLFunc != nil {
+	// With a splash, URLFunc runs while the engine starts and a window shows the splash (useSplash)
+	var later chan urlResult
+	if a.opts.URLFunc != nil && useSplash(a.opts) {
+		later = make(chan urlResult, 1)
+		go func() {
+			u, err := a.opts.URLFunc()
+			later <- urlResult{u, err}
+		}()
+	} else if a.opts.URLFunc != nil {
 		var err error
 		if entry, err = a.opts.URLFunc(); err != nil {
 			return err
@@ -150,20 +163,25 @@ func (a *App) run() error {
 		}
 	}
 
-	pageEntry, extra := mapHost(entry, a.opts.Host)
+	var extra []string
+	if later != nil {
+		sp, err := serveSplash(a.opts.Splash, a.opts.Logf)
+		if err != nil {
+			return err
+		}
+		defer sp.Close()
+		m.splash = "http://" + sp.Addr().String() + "/"
+	} else {
+		var pageEntry string
+		pageEntry, extra = mapHost(entry, a.opts.Host)
+		m.entry, m.origin = pageEntry, originOf(pageEntry)
+	}
 	extra = append(extra, a.opts.BrowserArgs...)
-	m.entry, m.origin = pageEntry, originOf(pageEntry)
 	chrome, proc, err := m.start(env, extra)
 	if err != nil {
 		return err
 	}
-	// Allowed without asking: notifications and the clipboard. One by one: Browser.grantPermissions grants the ones
-	// listed and denies all others (copy buttons fail, the microphone is denied). The rest keep Chrome's default.
-	for _, p := range []string{"notifications", "clipboard-read", "clipboard-write"} {
-		_, _ = m.c.Call("", "Browser.setPermission", map[string]any{
-			"origin": m.origin, "permission": map[string]any{"name": p, "allowWithoutSanitization": p == "clipboard-write"}, "setting": "granted",
-		})
-	}
+	m.grantPermissions()
 	if srv != nil {
 		// The Handler's cookie goes into the browser over the pipe, and windows open on the plain page URL: the
 		// login link would be on the command line that opens the window, which every process on the Mac can read.
@@ -174,7 +192,29 @@ func (a *App) run() error {
 		}
 		m.entry = m.origin + "/"
 	}
-	if err := m.newWindow(a.opts.Window.Path); err != nil {
+	if later != nil {
+		if err := m.newWindow(""); err != nil {
+			return err
+		}
+		var r urlResult
+		select {
+		case r = <-later:
+		case <-a.quit:
+		case <-m.allGone:
+		case <-chrome:
+		}
+		if r.err != nil || r.url == "" {
+			_, _ = m.c.Call("", "Browser.close", nil)
+			select {
+			case <-chrome:
+			case <-time.After(5 * time.Second):
+				_ = proc.Kill()
+			}
+			return r.err // nil: closed before the pages were ready
+		}
+		m.waitWindow(launchGrace)
+		m.setEntry(r.url)
+	} else if err := m.newWindow(a.opts.Window.Path); err != nil {
 		return err
 	}
 	go a.openURLs(a.urlsIn(os.Args[1:])) // started by a link (Windows; macOS: the engine started the app for one)
@@ -318,7 +358,7 @@ func (m *mac) event(msg *cdp.Msg) {
 		m.ctxMu.Lock()
 		origin := m.origins[msg.SessionID+" "+itoa(p.Context)]
 		m.ctxMu.Unlock()
-		if !appOrigin(origin, m.origin, m.app.opts.Origins) {
+		if !appOrigin(origin, m.org(), m.app.opts.Origins) {
 			m.app.logf("bridge: a call from %q ignored (not the app's page)", origin)
 			return
 		}
@@ -394,7 +434,7 @@ func (m *mac) attach(session, target, typ, u, opener string, waiting bool) {
 		{"Runtime.addBinding", map[string]any{"name": "__lightronPost"}},
 		{"Page.enable", nil},
 		{"Inspector.enable", nil},
-		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.origin, m.app.opts)}},
+		// (the page's own scripts: addPageScripts, below)
 		// Iframes of another site run in their own process, which the page's scripts don't reach: attach them too
 		// (attachFrame)
 		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
@@ -408,6 +448,7 @@ func (m *mac) attach(session, target, typ, u, opener string, waiting bool) {
 			m.app.logf("attach user agent: %v", err)
 		}
 	}
+	m.addPageScripts(session)
 	m.app.addWindow(&Window{app: m.app, id: target, session: session})
 	run()
 	go m.ensureBridge(session)
@@ -431,7 +472,7 @@ func (m *mac) attachFrame(session, page string, waiting bool) {
 		{"Runtime.enable", nil},
 		{"Runtime.addBinding", map[string]any{"name": "__lightronPost"}},
 		{"Page.enable", nil},
-		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.origin, m.app.opts)}},
+		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.org(), m.app.opts)}},
 		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
 	} {
 		if _, err := m.c.Call(session, step.method, step.params); err != nil {
@@ -458,7 +499,7 @@ func (m *mac) ensureBridge(session string) {
 		if len(parts) == 3 && parts[2] == "true" {
 			return
 		}
-		if len(parts) == 3 && parts[0] != "loading" && appOrigin(parts[1], m.origin, m.app.opts.Origins) {
+		if len(parts) == 3 && parts[0] != "loading" && appOrigin(parts[1], m.org(), m.app.opts.Origins) {
 			_, _ = m.c.Call(session, "Page.reload", nil)
 			return
 		}
@@ -495,14 +536,85 @@ func newTabPage(u string) bool {
 }
 
 func (m *mac) ours(u string) bool {
-	if u == "" || u == "about:blank" || strings.HasPrefix(u, m.origin+"/") {
+	o := m.org()
+	if u == "" || u == "about:blank" || (o != "" && strings.HasPrefix(u, o+"/")) {
 		return true
 	}
 	p, err := url.Parse(u)
-	return err == nil && appOrigin(p.Scheme+"://"+p.Host, m.origin, m.app.opts.Origins)
+	return err == nil && appOrigin(p.Scheme+"://"+p.Host, o, m.app.opts.Origins)
 }
 
-func (m *mac) ownOrigin() string { return m.origin }
+func (m *mac) ownOrigin() string { return m.org() }
+
+// org / pages: the app's origin and entry (see mac.entry)
+func (m *mac) org() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.origin
+}
+
+func (m *mac) pages() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.entry
+}
+
+// addPageScripts: the bridge, Script and PageScript for the page of a window (pageScripts: the bridge only on the
+// app's origins), its identifier kept so that setEntry can swap it.
+func (m *mac) addPageScripts(session string) {
+	r, err := m.c.Call(session, "Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.org(), m.app.opts)})
+	if err != nil {
+		m.app.logf("attach page scripts: %v", err)
+		return
+	}
+	var res struct {
+		Identifier string `json:"identifier"`
+	}
+	_ = json.Unmarshal(r, &res)
+	m.mu.Lock()
+	if m.scripts == nil {
+		m.scripts = map[string]string{}
+	}
+	m.scripts[session] = res.Identifier
+	m.mu.Unlock()
+}
+
+// setEntry: the app's pages are known (URLFunc returned while a splash showed): the windows' page scripts are made
+// again for the app's origin, and the windows go there.
+func (m *mac) setEntry(entry string) {
+	m.mu.Lock()
+	m.entry, m.origin = entry, originOf(entry)
+	m.mu.Unlock()
+	m.grantPermissions()
+	for _, w := range m.app.Windows() {
+		m.mu.Lock()
+		old := m.scripts[w.session]
+		m.mu.Unlock()
+		if old != "" {
+			_, _ = m.c.Call(w.session, "Page.removeScriptToEvaluateOnNewDocument", map[string]any{"identifier": old})
+		}
+		m.addPageScripts(w.session)
+		if _, err := m.c.Call(w.session, "Page.navigate", map[string]any{"url": pageURL(entry, m.app.opts.Window.Path)}); err != nil {
+			m.app.logf("splash: %v", err)
+		}
+		go m.ensureBridge(w.session)
+	}
+}
+
+// grantPermissions: notifications and the clipboard without asking, on the app's origin. One by one:
+// Browser.grantPermissions grants the ones listed and denies all others (copy buttons fail, the microphone is
+// denied). The rest keep Chrome's default.
+func (m *mac) grantPermissions() {
+	o := m.org()
+	if o == "" {
+		return
+	}
+	for _, p := range []string{"notifications", "clipboard-read", "clipboard-write"} {
+		_, _ = m.c.Call("", "Browser.setPermission", map[string]any{
+			"origin": o, "permission": map[string]any{"name": p, "allowWithoutSanitization": p == "clipboard-write"}, "setting": "granted",
+		})
+	}
+}
 
 // popup: a window the page opened past the bridge's window.open (noopener…): once it knows where it goes, an
 // outside address goes to the default browser instead.
@@ -590,7 +702,24 @@ func (m *mac) checkGone() {
 		time.AfterFunc(wait, m.checkGone)
 		return
 	}
+	m.mu.Lock()
+	m.closing = true // from now on no window opens again (reopen, newWindow)
+	m.mu.Unlock()
+	if m.menu != nil {
+		m.menu.quitting() // out of the Dock at once
+	}
 	m.goneOnce.Do(func() { close(m.allGone) })
+}
+
+// reopen: a click on the Dock icon. Not while quitting (the browser is still shutting down: its icon may still be
+// there), nor while a window asked for a moment ago hasn't attached yet (clicks in a row would open one each).
+func (m *mac) reopen() {
+	m.mu.Lock()
+	skip := m.closing || (len(m.app.Windows()) == 0 && time.Since(m.launched) < launchGrace)
+	m.mu.Unlock()
+	if !skip {
+		m.app.FocusOrOpen()
+	}
 }
 
 // ---- engine ----
@@ -599,9 +728,17 @@ func (m *mac) checkGone() {
 // opens an app window: no tabs, no toolbar. CDP can't make one (Target.createTarget opens a tabbed window).
 func (m *mac) newWindow(path string) error {
 	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return errors.New("lightron: the app is quitting")
+	}
 	m.launched = time.Now()
 	m.mu.Unlock()
-	cmd := exec.Command(m.exe, "--user-data-dir="+m.profile, "--app="+pageURL(m.entry, path), "--test-type")
+	entry := m.pages()
+	if entry == "" {
+		entry = m.splash
+	}
+	cmd := exec.Command(m.exe, "--user-data-dir="+m.profile, "--app="+pageURL(entry, path), "--test-type")
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -775,4 +912,11 @@ func detach() bool {
 	}
 	_ = cmd.Process.Release()
 	return true
+}
+
+// waitWindow: until a window has attached (the splash's: the browser takes a moment to open it), at most d.
+func (m *mac) waitWindow(d time.Duration) {
+	for end := time.Now().Add(d); time.Now().Before(end) && len(m.app.Windows()) == 0; {
+		time.Sleep(50 * time.Millisecond)
+	}
 }

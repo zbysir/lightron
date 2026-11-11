@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,17 @@ func (a *App) run() error {
 		defer ln.Close()
 	}
 	entry := a.opts.URL
-	if a.opts.URLFunc != nil {
+	// With a splash, URLFunc runs while the window shows the splash (useSplash): the page scripts and permissions
+	// wait for the app's origin, below
+	var later chan urlResult
+	var runErr error
+	if a.opts.URLFunc != nil && useSplash(a.opts) {
+		later = make(chan urlResult, 1)
+		go func() {
+			u, err := a.opts.URLFunc()
+			later <- urlResult{u, err}
+		}()
+	} else if a.opts.URLFunc != nil {
 		var err error
 		if entry, err = a.opts.URLFunc(); err != nil {
 			return err
@@ -130,11 +141,38 @@ func (a *App) run() error {
 	if mapped { // the bridge also at the real address, where the pages go if the host doesn't take (below)
 		scriptOpts.Origins = append([]string{originOf(real)}, a.opts.Origins...)
 	}
-	w.Init(pageScripts(originOf(entry), scriptOpts))
+	var splash net.Listener
+	if later == nil {
+		w.Init(pageScripts(originOf(entry), scriptOpts))
+	} else {
+		var err error
+		if splash, err = serveSplash(a.opts.Splash, a.opts.Logf); err != nil {
+			return err
+		}
+		defer splash.Close()
+	}
 	first := pageURL(entry, a.opts.Window.Path)
 	// Before the first page, over the DevTools protocol (it needs the message loop: after Run starts): the
 	// permissions, the User-Agent.
 	go func() {
+		if later != nil {
+			w.Dispatch(func() { w.Navigate("http://" + splash.Addr().String() + "/") })
+			var r urlResult
+			select {
+			case r = <-later:
+			case <-a.quit:
+				return
+			}
+			if r.err != nil || r.url == "" {
+				runErr = r.err
+				w.Dispatch(func() { w.Terminate() })
+				return
+			}
+			e.origin, first = originOf(r.url), pageURL(r.url, a.opts.Window.Path)
+			done := make(chan struct{})
+			w.Dispatch(func() { w.Init(pageScripts(e.origin, a.opts)); close(done) })
+			<-done
+		}
 		if !e.grantPermissions() && mapped {
 			// WebView2 didn't take the host switches: some don't read WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (seen on
 			// GitHub's Windows runners, WebView2 156), and the origin they would make secure can't be granted
@@ -182,7 +220,7 @@ func (a *App) run() error {
 		e.tray.remove()
 	}
 	a.Quit()
-	return nil
+	return runErr
 }
 
 // grantPermissions: notifications and the clipboard without asking, for the app's own pages, as on macOS: WebView2
