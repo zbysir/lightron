@@ -20,9 +20,33 @@ import (
 
 // ICoreWebView2 vtable slots (WebView2.h; the same order as go-webview2's iCoreWebView2Vtbl).
 const (
-	slotGetSource                  = 4
-	slotCallDevToolsProtocolMethod = 36
+	slotQueryInterface                   = 0
+	slotRelease                          = 2
+	slotGetSource                        = 4
+	slotCallDevToolsProtocolMethod       = 36
+	slotGetDevToolsProtocolEventReceiver = 42
+	// ICoreWebView2_11
+	slotCallDevToolsProtocolMethodForSession = 99
+	// ICoreWebView2DevToolsProtocolEventReceiver
+	slotAddDevToolsProtocolEventReceived = 3
+	// ICoreWebView2DevToolsProtocolEventReceivedEventArgs(2)
+	slotGetParameterObjectAsJSON = 3
+	slotGetSessionID             = 4
 )
+
+var (
+	iidCoreWebView2_11 = windows.GUID{Data1: 0x0be78e56, Data2: 0xc193, Data3: 0x4051, Data4: [8]byte{0xb9, 0x43, 0x23, 0xb4, 0x60, 0xc0, 0x8b, 0xdb}}
+	iidEventArgs2      = windows.GUID{Data1: 0x2dc4959d, Data2: 0x1494, Data3: 0x4393, Data4: [8]byte{0x95, 0xba, 0xbe, 0xa4, 0xcb, 0x9e, 0xbd, 0x1b}}
+)
+
+// queryInterface: obj's iid interface (AddRef'd), nil if it hasn't one.
+func queryInterface(obj unsafe.Pointer, iid *windows.GUID) unsafe.Pointer {
+	var out unsafe.Pointer
+	if comCall(obj, slotQueryInterface, uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&out))) != 0 {
+		return nil
+	}
+	return out
+}
 
 // coreWebView: the ICoreWebView2 inside a go-webview2 webview (webview.browser.(*edge.Chromium).webview); 0 if its
 // layout isn't what this expects.
@@ -121,9 +145,17 @@ func cdpInit() {
 // cdpCall runs a DevTools protocol method on the webview's page and waits for its result. Not on the UI thread
 // (the result comes through the UI thread's message loop).
 func (e *win) cdpCall(method string, params any) (json.RawMessage, error) {
+	return e.cdpCallIn("", method, params)
+}
+
+// cdpCallIn: in a session of Target.attachedToTarget (an iframe of another site); "" is the page.
+func (e *win) cdpCallIn(session, method string, params any) (json.RawMessage, error) {
 	wv := e.core
 	if wv == nil {
 		return nil, errors.New("lightron: the DevTools protocol isn't reachable in this WebView2 (go-webview2 changed?)")
+	}
+	if session != "" && e.core11 == nil {
+		return nil, errors.New("lightron: this WebView2 can't call into a session (older than ICoreWebView2_11)")
 	}
 	if params == nil {
 		params = map[string]any{}
@@ -141,8 +173,15 @@ func (e *win) cdpCall(method string, params any) (json.RawMessage, error) {
 	cdpMu.Unlock()
 	m16, _ := windows.UTF16PtrFromString(method)
 	p16, _ := windows.UTF16PtrFromString(string(p))
+	s16, _ := windows.UTF16PtrFromString(session)
 	e.wv.Dispatch(func() {
-		if hr := comCall(wv, slotCallDevToolsProtocolMethod, uintptr(unsafe.Pointer(m16)), uintptr(unsafe.Pointer(p16)), uintptr(unsafe.Pointer(h))); hr != 0 {
+		var hr uintptr
+		if session == "" {
+			hr = comCall(wv, slotCallDevToolsProtocolMethod, uintptr(unsafe.Pointer(m16)), uintptr(unsafe.Pointer(p16)), uintptr(unsafe.Pointer(h)))
+		} else {
+			hr = comCall(e.core11, slotCallDevToolsProtocolMethodForSession, uintptr(unsafe.Pointer(s16)), uintptr(unsafe.Pointer(m16)), uintptr(unsafe.Pointer(p16)), uintptr(unsafe.Pointer(h)))
+		}
+		if hr != 0 {
 			cdpMu.Lock()
 			delete(cdpPending, h.id)
 			delete(cdpKeep, h.id)
@@ -175,4 +214,70 @@ func itohex(n uintptr) string {
 		b = append([]byte{digits[n&15]}, b...)
 	}
 	return string(b)
+}
+
+// ---- events ----
+
+// cdpEventHandler is an ICoreWebView2DevToolsProtocolEventReceivedEventHandler, one per event name.
+type cdpEventHandler struct {
+	vtbl *[4]uintptr
+	fn   func(session string, params json.RawMessage)
+}
+
+var (
+	cdpEventOnce sync.Once
+	cdpEventVtbl [4]uintptr
+	cdpEventKeep []*cdpEventHandler // for the webview's lifetime
+)
+
+func cdpEventInit() {
+	cdpEventVtbl = [4]uintptr{
+		windows.NewCallback(func(this *cdpEventHandler, _ uintptr, out *uintptr) uintptr { // QueryInterface
+			if out != nil {
+				*out = uintptr(unsafe.Pointer(this))
+			}
+			return 0
+		}),
+		windows.NewCallback(func(this *cdpEventHandler) uintptr { return 1 }), // AddRef
+		windows.NewCallback(func(this *cdpEventHandler) uintptr { return 1 }), // Release
+		windows.NewCallback(func(this *cdpEventHandler, _ uintptr, args unsafe.Pointer) uintptr { // Invoke(sender, args)
+			params, session := "", ""
+			var s *uint16
+			if comCall(args, slotGetParameterObjectAsJSON, uintptr(unsafe.Pointer(&s))) == 0 && s != nil {
+				params = windows.UTF16PtrToString(s)
+				windows.CoTaskMemFree(unsafe.Pointer(s))
+			}
+			if a2 := queryInterface(args, &iidEventArgs2); a2 != nil {
+				s = nil
+				if comCall(a2, slotGetSessionID, uintptr(unsafe.Pointer(&s))) == 0 && s != nil {
+					session = windows.UTF16PtrToString(s)
+					windows.CoTaskMemFree(unsafe.Pointer(s))
+				}
+				comCall(a2, slotRelease)
+			}
+			go this.fn(session, json.RawMessage(params)) // the UI thread mustn't wait on what fn calls
+			return 0
+		}),
+	}
+}
+
+// cdpOn subscribes to a DevTools protocol event, of the page and of every session in it. On the UI thread.
+func (e *win) cdpOn(event string, fn func(session string, params json.RawMessage)) error {
+	if e.core == nil {
+		return errors.New("lightron: the DevTools protocol isn't reachable in this WebView2")
+	}
+	cdpEventOnce.Do(cdpEventInit)
+	ev16, _ := windows.UTF16PtrFromString(event)
+	var rcv unsafe.Pointer
+	if hr := comCall(e.core, slotGetDevToolsProtocolEventReceiver, uintptr(unsafe.Pointer(ev16)), uintptr(unsafe.Pointer(&rcv))); hr != 0 || rcv == nil {
+		return errors.New("lightron: " + event + ": no receiver, HRESULT 0x" + itohex(hr&0xffffffff))
+	}
+	defer comCall(rcv, slotRelease)
+	h := &cdpEventHandler{vtbl: &cdpEventVtbl, fn: fn}
+	cdpEventKeep = append(cdpEventKeep, h)
+	var token int64
+	if hr := comCall(rcv, slotAddDevToolsProtocolEventReceived, uintptr(unsafe.Pointer(h)), uintptr(unsafe.Pointer(&token))); hr != 0 {
+		return errors.New("lightron: " + event + ": HRESULT 0x" + itohex(hr&0xffffffff))
+	}
+	return nil
 }

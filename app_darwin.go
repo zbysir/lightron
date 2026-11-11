@@ -39,6 +39,7 @@ type mac struct {
 
 	ctxMu   sync.Mutex
 	origins map[string]string // "<session> <execution context id>" → the context's origin: who called the binding
+	frames  map[string]string // an out-of-process iframe's session → its window's (page) session
 
 	mu       sync.Mutex
 	launched time.Time // the last newWindow: its window may not have attached yet
@@ -241,6 +242,11 @@ func (m *mac) event(msg *cdp.Msg) {
 		}
 		_ = json.Unmarshal(msg.Params, &p)
 		t := p.TargetInfo
+		if t.Type == "iframe" {
+			// Sent on the session of the page (or frame) it is in
+			go m.attachFrame(p.SessionID, m.pageOf(msg.SessionID), p.Waiting)
+			return
+		}
 		go m.attach(p.SessionID, t.TargetID, t.Type, t.URL, t.OpenerID, p.Waiting)
 	case "Target.detachedFromTarget":
 		var p struct {
@@ -256,6 +262,11 @@ func (m *mac) event(msg *cdp.Msg) {
 		for k := range m.origins {
 			if strings.HasPrefix(k, p.SessionID+" ") {
 				delete(m.origins, k)
+			}
+		}
+		for f, page := range m.frames {
+			if f == p.SessionID || page == p.SessionID {
+				delete(m.frames, f)
 			}
 		}
 		m.ctxMu.Unlock()
@@ -288,8 +299,8 @@ func (m *mac) event(msg *cdp.Msg) {
 			m.app.logf("bridge: a call from %q ignored (not the app's page)", origin)
 			return
 		}
-		if w := m.windowBySession(msg.SessionID); w != nil {
-			go m.bridge(w, p.Payload)
+		if w := m.windowBySession(m.pageOf(msg.SessionID)); w != nil {
+			go m.bridge(w, msg.SessionID, p.Payload)
 		}
 	case "Inspector.targetCrashed":
 		// The page's process died (a crash, or macOS reclaimed it): load it again.
@@ -299,6 +310,16 @@ func (m *mac) event(msg *cdp.Msg) {
 			_, _ = m.c.Call(session, "Page.reload", nil)
 		}(msg.SessionID)
 	}
+}
+
+// pageOf: the page session a session is in (itself for a page, the window's page for an out-of-process iframe).
+func (m *mac) pageOf(s string) string {
+	m.ctxMu.Lock()
+	defer m.ctxMu.Unlock()
+	if p, ok := m.frames[s]; ok {
+		return p
+	}
+	return s
 }
 
 func (m *mac) windowBySession(s string) *Window {
@@ -351,6 +372,9 @@ func (m *mac) attach(session, target, typ, u, opener string, waiting bool) {
 		{"Page.enable", nil},
 		{"Inspector.enable", nil},
 		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.origin, m.app.opts)}},
+		// Iframes of another site run in their own process, which the page's scripts don't reach: attach them too
+		// (attachFrame)
+		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
 	} {
 		if _, err := m.c.Call(session, step.method, step.params); err != nil {
 			m.app.logf("attach %s: %v", step.method, err)
@@ -365,6 +389,35 @@ func (m *mac) attach(session, target, typ, u, opener string, waiting bool) {
 	run()
 	go m.ensureBridge(session)
 
+}
+
+// attachFrame: an iframe of another site than its page (out of process): the same scripts as a page, so an app's
+// page embedded in a website (a panel docked in it) has window.lightron too. Only files' paths are answered there
+// (bridge): invoke's replies and events go to the window's top page.
+func (m *mac) attachFrame(session, page string, waiting bool) {
+	m.ctxMu.Lock()
+	if m.frames == nil {
+		m.frames = map[string]string{}
+	}
+	m.frames[session] = page
+	m.ctxMu.Unlock()
+	for _, step := range []struct {
+		method string
+		params any
+	}{
+		{"Runtime.enable", nil},
+		{"Runtime.addBinding", map[string]any{"name": "__lightronPost"}},
+		{"Page.enable", nil},
+		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": pageScripts(m.origin, m.app.opts)}},
+		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
+	} {
+		if _, err := m.c.Call(session, step.method, step.params); err != nil {
+			m.app.logf("attach frame %s: %v", step.method, err)
+		}
+	}
+	if waiting {
+		_, _ = m.c.Call(session, "Runtime.runIfWaitingForDebugger", nil)
+	}
 }
 
 // ensureBridge: a window's page must start with the bridge in place, and attaching early isn't enough: a login
@@ -446,14 +499,20 @@ func (m *mac) popup(target string) {
 }
 
 // bridge: a message from window.lightron. Files' paths are the engine's to answer; the rest is the app's.
-func (m *mac) bridge(w *Window, payload string) {
+// session is the caller's: the window's page, or an iframe in it.
+func (m *mac) bridge(w *Window, session, payload string) {
 	var p struct {
 		T  string `json:"t"`
 		ID int64  `json:"id"`
 	}
 	if json.Unmarshal([]byte(payload), &p) == nil && p.T == "path" {
-		path, _ := json.Marshal(m.filePath(w.session, p.ID))
-		_ = m.eval(w, "window.lightron.__settle("+itoa(p.ID)+","+string(path)+",null)")
+		path, _ := json.Marshal(m.filePath(session, p.ID))
+		_, _ = m.c.Eval(session, "window.lightron.__settle("+itoa(p.ID)+","+string(path)+",null)")
+		return
+	}
+	if session != w.session {
+		// The answer would go to the top page, whose calls are numbered on their own
+		m.app.logf("bridge: only files' paths are answered in an iframe")
 		return
 	}
 	m.app.message(w, payload)

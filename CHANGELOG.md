@@ -3,6 +3,15 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [Unreleased]
+
+### Fixed
+
+- macOS: an app's page in an iframe of another site (a panel the app docks in a website, with `PageScript`) runs in
+  its own process, which the bridge never reached: it has `window.lightron` now, and `getPathForFile` answers there
+  (a file or folder dropped on the panel). Only files' paths are answered in such an iframe; `invoke` and events stay
+  the top page's.
+
 ## [0.4.4] - 2026-11-10
 
 ### Changed

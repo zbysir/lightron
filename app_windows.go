@@ -42,6 +42,7 @@ type win struct {
 	hwnd     uintptr
 	main     *Window
 	core     unsafe.Pointer // the ICoreWebView2 (cdp_windows.go); nil if unreachable
+	core11   unsafe.Pointer // its ICoreWebView2_11 (sessions: frames_windows.go); nil on an older WebView2
 	origin   string         // the app's own origin (bridge calls from other sites are dropped)
 	tray     *tray          // KeepRunning (tray_windows.go)
 	quitting bool           // closing for real: WM_CLOSE isn't a hide
@@ -163,6 +164,7 @@ func (a *App) run() error {
 				}
 			}
 		}
+		e.watchFrames()
 		w.Dispatch(func() { w.Navigate(first) })
 	}()
 	go func() {
@@ -225,8 +227,8 @@ func (e *win) message(payload string) {
 	}
 	_ = json.Unmarshal([]byte(payload), &p)
 	switch p.T {
-	case "path": // a file's path isn't reachable through this WebView2 binding
-		go func() { _ = e.eval(e.main, "window.lightron.__settle("+itoa(p.ID)+",\"\",null)") }()
+	case "path":
+		go e.answerPath("", 0, p.ID)
 	case "title":
 		t := p.Title
 		if t == "" {
