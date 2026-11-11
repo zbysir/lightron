@@ -54,6 +54,9 @@ type mac struct {
 const launchGrace = 5 * time.Second
 
 func (a *App) run() error {
+	if detach() {
+		return nil
+	}
 	a.quit = make(chan struct{})
 	dir := a.opts.DataDir
 	if dir == "" {
@@ -65,6 +68,10 @@ func (a *App) run() error {
 	}
 	ln, other := claimInstance(dir, a.urlsIn(os.Args[1:]), a.second)
 	if other {
+		// The running app can't bring itself forward (macOS 14 lets only the app in front hand activation over, and
+		// the running one is in the background). This process was started by the person (they opened the app again):
+		// asking LaunchServices to open the engine activates it, and the reopen it gets brings a window up (menu.m).
+		_ = exec.Command("open", "-b", a.opts.ID+".engine").Run()
 		return nil
 	}
 	if ln != nil {
@@ -738,4 +745,34 @@ end run`
 	if strings.TrimSpace(string(out)) == "Download Chrome" {
 		_ = exec.Command("open", "https://www.google.com/chrome/").Run()
 	}
+}
+
+// detach: started by LaunchServices (Finder, the Dock, Spotlight, a launcher: __CFBundleIdentifier is set), this
+// program is recorded as the running app. Opening the app again then doesn't start the program: macOS sends the
+// running one a reopen Apple event, which a Go program with no event loop never answers ("the application can no
+// longer be opened", error -600). So the program starts a copy of itself that LaunchServices doesn't know about and
+// leaves at once; every later open starts the program again, which hands over to the running one (claimInstance).
+// true: this process should return now.
+func detach() bool {
+	if os.Getenv("__CFBundleIdentifier") == "" || os.Getenv("LIGHTRON_DETACHED") != "" {
+		return false
+	}
+	exe, err := os.Executable()
+	if err != nil || !strings.Contains(exe, ".app/Contents/MacOS/") {
+		return false
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "__CFBundleIdentifier=") {
+			env = append(env, kv)
+		}
+	}
+	cmd := exec.Command(exe, os.Args[1:]...)
+	cmd.Env = append(env, "LIGHTRON_DETACHED=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return false // carry on in this process: only reopening is affected
+	}
+	_ = cmd.Process.Release()
+	return true
 }

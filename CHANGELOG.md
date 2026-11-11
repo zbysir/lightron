@@ -21,6 +21,12 @@ and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, mino
 
 ### Fixed
 
+- macOS: opening the app again from Finder, Spotlight or a launcher failed with "the application can no longer be
+  opened" (-600) when that is how it had been started: LaunchServices recorded the Go program as the running app and
+  sent it a reopen it can't answer. Started by LaunchServices, the program now hands over to a copy of itself
+  LaunchServices doesn't know, so every open starts it again and it hands over to the running one.
+- macOS: opening the app again while it runs didn't bring its window forward (macOS 14 lets only the app in front hand
+  activation over): the instance the person started asks LaunchServices to open the engine, which activates it.
 - macOS: a popup the page opened past the bridge on another of the app's origins was closed and sent to the default
   browser.
 
