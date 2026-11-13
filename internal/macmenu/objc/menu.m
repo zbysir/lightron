@@ -416,9 +416,10 @@ static NSMenu *ourDockMenu(id self, SEL _cmd, NSApplication *app) {
 // A click on the Dock icon is a "reopen": the delegate's applicationShouldHandleReopen:hasVisibleWindows:, where Chrome
 // opens a new-tab window when it has no browser window (our --app windows don't count). The Go side closed that window
 // and brought ours up, but it showed for a moment: a box flashing on every click. Ours tells the Go side instead (it
-// brings a window up, or opens one) and has AppKit do nothing more.
+// brings a window up, or opens one) and has AppKit do nothing more. Whether a window is visible goes along: with one,
+// AppKit's activation has already brought the app forward with its windows in their order, and the Go side leaves them.
 static BOOL ourReopen(id self, SEL _cmd, NSApplication *app, BOOL visible) {
-  sendLine(@"action reopen");
+  sendLine(visible ? @"action reopen visible" : @"action reopen");
   return NO;
 }
 

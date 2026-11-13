@@ -3,6 +3,15 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.11] - 2026-11-13
+
+### Fixed
+
+- macOS: with two or more windows, a click on the Dock icon brought one of them to the front at random (the windows
+  are kept in a map, and it focused the first one out). With a window on screen it now leaves them as they are, as
+  any Mac app does: activating the app has already brought it forward with its windows in their order. With none on
+  screen (all minimized) it still brings one up, or opens one.
+
 ## [0.4.10] - 2026-11-11
 
 ### Fixed
@@ -212,6 +221,7 @@ The first release: Gerdr's desktop shell, made into a library.
 - `lightron` CLI: `init`, `build` (.app / .dmg / .zip, Windows .exe with resources, NSIS installer), `feed`,
   `doctor`.
 
+[0.4.11]: https://github.com/zbysir/lightron/releases/tag/v0.4.11
 [0.4.10]: https://github.com/zbysir/lightron/releases/tag/v0.4.10
 [0.4.9]: https://github.com/zbysir/lightron/releases/tag/v0.4.9
 [0.4.8]: https://github.com/zbysir/lightron/releases/tag/v0.4.8

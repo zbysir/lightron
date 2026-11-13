@@ -719,16 +719,23 @@ func (m *mac) checkGone() {
 	m.goneOnce.Do(func() { close(m.allGone) })
 }
 
-// reopen: a click on the Dock icon. Not while quitting (the browser is still shutting down: its icon may still be
-// there), nor while a window asked for a moment ago hasn't attached yet (clicks in a row would open one each).
-func (m *mac) reopen() {
+// dockClick: a click on the Dock icon. Not while quitting (the browser is still shutting down: its icon may still be
+// there), nor while a window asked for a moment ago hasn't attached yet (clicks in a row would open one each). Nor
+// when one of the app's windows is on screen: activating the app has already brought it forward with its windows in
+// their order, as any Mac app. Focusing one here picked any of them (Windows is a map), so with two windows a click
+// on the Dock icon swapped them half the time.
+func (m *mac) dockClick(visible bool) {
 	m.mu.Lock()
-	skip := m.closing || (len(m.app.Windows()) == 0 && time.Since(m.launched) < launchGrace)
+	n := len(m.app.Windows())
+	skip := m.closing || (n == 0 && time.Since(m.launched) < launchGrace) || (visible && n > 0)
 	m.mu.Unlock()
 	if !skip {
 		m.app.FocusOrOpen()
 	}
 }
+
+// reopen: the app was opened again (engine). Like a click on the Dock icon with no window on screen.
+func (m *mac) reopen() { m.dockClick(false) }
 
 // ---- engine ----
 

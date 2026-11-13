@@ -65,9 +65,10 @@ func (mm *macMenu) read(c net.Conn) {
 		case "url": // a link of the app's schemes, sent to the engine while running (menu.m's getURL)
 			go mm.m.app.openURLs([]string{arg})
 		case "action":
-			switch arg {
-			case "reopen": // a click on the Dock icon
-				go mm.m.reopen()
+			action, extra, _ := strings.Cut(arg, " ")
+			switch action {
+			case "reopen": // a click on the Dock icon; "visible" when the app has a window on screen (menu.m's ourReopen)
+				go mm.m.dockClick(extra == "visible")
 			case "quit": // the Quit item (⌘Q), and the Dock menu's Quit / a quit Apple event (menu.m's ourShouldTerminate)
 				mm.m.app.Quit()
 			case "reload":
