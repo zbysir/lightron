@@ -814,7 +814,10 @@ func (m *mac) focusedWindow() *Window {
 // ---- the profile ----
 
 // setPrefs: profile preferences without a command-line switch, written while the browser isn't running (we hold the
-// instance socket). translate.enabled: Chrome guesses a page's language and offers to translate it, in a bar.
+// instance socket). The windows are an app, not a browser, so none of the browser's offers over the page:
+// translate.enabled (it guesses a page's language and offers to translate it, in a bar), credentials_enable_service
+// and profile.password_manager_enabled (a login form, or any form with a password field, gets "Save password?"),
+// autofill.profile_enabled / credit_card_enabled (the same for addresses and cards).
 func setPrefs(profile string) {
 	p := filepath.Join(profile, "Default", "Preferences")
 	prefs := map[string]any{}
@@ -823,19 +826,43 @@ func setPrefs(profile string) {
 			return
 		}
 	}
-	tr, _ := prefs["translate"].(map[string]any)
-	if tr == nil {
-		tr = map[string]any{}
+	changed := false
+	for _, k := range []string{
+		"translate.enabled",
+		"credentials_enable_service",
+		"profile.password_manager_enabled",
+		"autofill.profile_enabled",
+		"autofill.credit_card_enabled",
+	} {
+		if setPref(prefs, strings.Split(k, "."), false) {
+			changed = true
+		}
 	}
-	if tr["enabled"] == false {
+	if !changed {
 		return
 	}
-	tr["enabled"] = false
-	prefs["translate"] = tr
 	if b, err := json.Marshal(prefs); err == nil {
 		_ = os.MkdirAll(filepath.Dir(p), 0o700)
 		_ = os.WriteFile(p, b, 0o600)
 	}
+}
+
+// setPref sets the value at a dotted path of Preferences' nested objects, creating them; true if it changed.
+func setPref(m map[string]any, path []string, v any) bool {
+	for _, k := range path[:len(path)-1] {
+		next, _ := m[k].(map[string]any)
+		if next == nil {
+			next = map[string]any{}
+			m[k] = next
+		}
+		m = next
+	}
+	last := path[len(path)-1]
+	if m[last] == v {
+		return false
+	}
+	m[last] = v
+	return true
 }
 
 // acceptLang: the system's preferred languages (AppleLanguages: zh-Hans-CN, en-US…) as Accept-Language

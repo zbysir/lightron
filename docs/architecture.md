@@ -50,7 +50,7 @@ The engine starts with `--remote-debugging-pipe`: DevTools protocol messages as 
   browser takes over (its process singleton). `--app` windows have a bare title bar.
 - `--test-type`, on both command lines: Chrome otherwise shows a warning bar about the flags below.
 - The host switches (see "Both": the page host).
-- `--accept-lang` from the system's languages (a fresh profile would say en-US); translation off in Preferences.
+- `--accept-lang` from the system's languages (a fresh profile would say en-US); translation, saving passwords and autofill off in Preferences (an app, not a browser).
 - `--window-size`: the size of a window with no saved placement; after that the browser remembers.
 
 `Target.setAutoAttach` with `waitForDebuggerOnStart` holds every new page until Lightron has set it up:

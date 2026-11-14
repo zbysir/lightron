@@ -3,6 +3,14 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/) (before 1.0, minor versions may break the API).
 
+## [0.4.12] - 2026-11-14
+
+### Fixed
+
+- macOS: a page with a password field (a login form) got Chrome's "Save password?" dialog, and forms its address /
+  card offers. The app's profile now has the password manager and autofill off, as translation already was: the
+  windows are an app, not a browser.
+
 ## [0.4.11] - 2026-11-13
 
 ### Fixed
